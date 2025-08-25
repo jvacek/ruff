@@ -171,6 +171,19 @@ impl<'db> ConstraintSet<'db> {
         }
     }
 
+    /// Returns a constraint set that constraints a typevar to a particular range of types.
+    pub(crate) fn constrain_typevar(
+        db: &'db dyn Db,
+        typevar: BoundTypeVarInstance<'db>,
+        lower: Type<'db>,
+        upper: Type<'db>,
+    ) -> Self {
+        let lower = lower.bottom_materialization(db);
+        let upper = upper.top_materialization(db);
+        let node = RangeConstraint::new_node(db, lower, typevar, upper);
+        Self { node }
+    }
+
     /// Returns whether this constraint set never holds
     pub(crate) fn is_never_satisfied(self) -> bool {
         self.node.is_never_satisfied()
@@ -218,6 +231,15 @@ impl<'db> ConstraintSet<'db> {
             self.union(db, other());
         }
         self
+    }
+
+    /// Returns a constraint set encoding that this constraint set implies another.
+    ///
+    /// In Boolean logic, `p → q` is usually translated into `¬p ∨ q`. However, we translate it
+    /// into the equivalent `¬p ∨ (p ∧ q)`. This ensures that the constraints under which `q` is
+    /// true are compatible with the assumptions introduced by `p`.
+    pub(crate) fn implies(self, db: &'db dyn Db, other: impl FnOnce() -> Self) -> Self {
+        self.clone().negate(db).or(db, || self.and(db, other))
     }
 
     pub(crate) fn range(
