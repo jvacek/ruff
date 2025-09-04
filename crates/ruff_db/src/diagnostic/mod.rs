@@ -504,10 +504,16 @@ impl Diagnostic {
     /// Panics if either diagnostic has no primary span, if the span has no range, or if its file is
     /// not a `SourceFile`.
     pub fn ruff_start_ordering(&self, other: &Self) -> std::cmp::Ordering {
-        (self.expect_ruff_source_file(), self.expect_range().start()).cmp(&(
+        let a = (
+            self.expect_ruff_source_file(),
+            self.range().map(|r| r.start()).unwrap_or_default(),
+        );
+        let b = (
             other.expect_ruff_source_file(),
-            other.expect_range().start(),
-        ))
+            other.range().map(|r| r.start()).unwrap_or_default(),
+        );
+
+        a.cmp(&b)
     }
 }
 
