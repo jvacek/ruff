@@ -53,14 +53,18 @@
 //!
 //! [bdd]: https://en.wikipedia.org/wiki/Binary_decision_diagram
 
+use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::fmt::Display;
 
 use itertools::Itertools;
 use rustc_hash::FxHashSet;
 
-use crate::Db;
-use crate::types::{BoundTypeVarInstance, IntersectionType, Type, UnionType};
+use crate::types::visitor::{NonAtomicType, TypeKind, TypeVisitor, walk_non_atomic_type};
+use crate::types::{
+    BoundTypeVarInstance, IntersectionType, Type, TypeVarBoundOrConstraints, UnionType,
+};
+use crate::{Db, FxIndexSet};
 
 /// An extension trait for building constraint sets from [`Option`] values.
 pub(crate) trait OptionConstraintsExtension<T> {
@@ -1368,5 +1372,69 @@ impl<'db> SatisfiedClauses<'db> {
         }
 
         DisplaySatisfiedClauses { clauses: self, db }
+    }
+}
+
+/// Returns a constraint set describing the valid specializations of a typevar.
+impl<'db> BoundTypeVarInstance<'db> {
+    pub(crate) fn valid_specializations(self, db: &'db dyn Db) -> ConstraintSet<'db> {
+        match self.typevar(db).bound_or_constraints(db) {
+            None => ConstraintSet::from(true),
+            Some(TypeVarBoundOrConstraints::UpperBound(bound)) => {
+                ConstraintSet::constrain_typevar(db, self, Type::Never, bound)
+            }
+            Some(TypeVarBoundOrConstraints::Constraints(constraints)) => {
+                constraints.elements(db).iter().when_any(db, |constraint| {
+                    ConstraintSet::constrain_typevar(db, self, *constraint, *constraint)
+                })
+            }
+        }
+    }
+}
+
+/// Returns a constraint set describing the valid specializations of any typevar mentioned in a
+/// type.
+impl<'db> Type<'db> {
+    pub(crate) fn valid_specializations(self, db: &'db dyn Db) -> ConstraintSet<'db> {
+        struct ValidSpecializationsVisitor<'db> {
+            seen_types: RefCell<FxIndexSet<NonAtomicType<'db>>>,
+            result: RefCell<ConstraintSet<'db>>,
+        }
+
+        impl<'db> TypeVisitor<'db> for ValidSpecializationsVisitor<'db> {
+            fn should_visit_lazy_type_attributes(&self) -> bool {
+                false
+            }
+
+            fn visit_type(&self, db: &'db dyn Db, ty: Type<'db>) {
+                match ty {
+                    Type::NonInferableTypeVar(bound_typevar) | Type::TypeVar(bound_typevar) => {
+                        let valid_specializations = bound_typevar.valid_specializations(db);
+                        self.result
+                            .borrow_mut()
+                            .intersect(db, &valid_specializations);
+                    }
+                    _ => {}
+                }
+
+                match TypeKind::from(ty) {
+                    TypeKind::Atomic => {}
+                    TypeKind::NonAtomic(non_atomic_type) => {
+                        if !self.seen_types.borrow_mut().insert(non_atomic_type) {
+                            // If we have already seen this type, we can skip it.
+                            return;
+                        }
+                        walk_non_atomic_type(db, non_atomic_type, self);
+                    }
+                }
+            }
+        }
+
+        let visitor = ValidSpecializationsVisitor {
+            seen_types: RefCell::new(FxIndexSet::default()),
+            result: RefCell::new(ConstraintSet::from(true)),
+        };
+        visitor.visit_type(db, self);
+        visitor.result.into_inner()
     }
 }
