@@ -1412,7 +1412,7 @@ impl<'db> Type<'db> {
                         let valid_specializations = bound_typevar.valid_specializations(db);
                         self.result
                             .borrow_mut()
-                            .intersect(db, &valid_specializations);
+                            .intersect(db, valid_specializations);
                     }
                     _ => {}
                 }

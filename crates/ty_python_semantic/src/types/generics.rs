@@ -1131,7 +1131,7 @@ impl<'db> SpecializationBuilder<'db> {
                                     }
                                 }
                             }
-                            when_all_assignable.intersect(self.db, &when_assignable);
+                            when_all_assignable.intersect(self.db, when_assignable);
                         }
 
                         if when_all_assignable.is_always_satisfied() {
