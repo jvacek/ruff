@@ -1638,68 +1638,32 @@ impl<'db> Type<'db> {
                 })
             }
 
-            // A non-inferable typevar must satisfy the relation for every possible specialization.
+            // A non-inferable typevar satisfies a relation when...it satisfies the relation. Yes
+            // that's a tautology! We're moving the caller's subtyping/assignability requirement
+            // into a constraint set. If the typevar has an upper bound or constraints, then the
+            // relation only has to hold when the typevar has a valid specialization (i.e., one
+            // that satisfies the upper bound/constraints).
             (Type::NonInferableTypeVar(bound_typevar), _) => {
-                match bound_typevar.typevar(db).bound_or_constraints(db) {
-                    // Verify that the upper bound satisfies the relation. (If it does, than any
-                    // subtype of the upper bound will too.)
-                    None => {
-                        let bound = Type::object();
-                        ConstraintSet::constrain_typevar(db, bound_typevar, Type::Never, bound)
-                            .implies(db, || {
-                                bound.has_relation_to_impl(db, target, relation, visitor)
-                            })
-                    }
-                    Some(TypeVarBoundOrConstraints::UpperBound(bound)) => {
-                        ConstraintSet::constrain_typevar(db, bound_typevar, Type::Never, bound)
-                            .implies(db, || {
-                                bound.has_relation_to_impl(db, target, relation, visitor)
-                            })
-                    }
-                    // Verify that each constraint satisfies the relation. (Note that constrained
-                    // typevars must specialize to _exactly_ one of the constraints, not to a
-                    // _subtype_ of one.)
-                    Some(TypeVarBoundOrConstraints::Constraints(constraints)) => {
-                        constraints.elements(db).iter().when_all(db, |constraint| {
-                            ConstraintSet::constrain_typevar(
-                                db,
-                                bound_typevar,
-                                *constraint,
-                                *constraint,
-                            )
-                            .implies(db, || {
-                                constraint.has_relation_to_impl(db, target, relation, visitor)
-                            })
-                        })
-                    }
-                }
+                bound_typevar.valid_specializations(db).implies(db, || {
+                    ConstraintSet::constrain_typevar(
+                        db,
+                        bound_typevar,
+                        Type::Never,
+                        target,
+                        relation,
+                    )
+                })
             }
-
             (_, Type::NonInferableTypeVar(bound_typevar)) => {
-                match bound_typevar.typevar(db).bound_or_constraints(db) {
-                    // There is no guarantee which type an unconstrained typevar might specialize
-                    // to. Never (which is checked above) is the only type that is a subtype of any
-                    // specialization.
-                    None | Some(TypeVarBoundOrConstraints::UpperBound(_)) => {
-                        ConstraintSet::from(false)
-                    }
-
-                    // A constrained typevar, on the other hand, does have a fixed set of types
-                    // that it can specialize to, so we can check them all exhaustively.
-                    Some(TypeVarBoundOrConstraints::Constraints(constraints)) => {
-                        constraints.elements(db).iter().when_all(db, |constraint| {
-                            ConstraintSet::constrain_typevar(
-                                db,
-                                bound_typevar,
-                                *constraint,
-                                *constraint,
-                            )
-                            .implies(db, || {
-                                self.has_relation_to_impl(db, *constraint, relation, visitor)
-                            })
-                        })
-                    }
-                }
+                bound_typevar.valid_specializations(db).implies(db, || {
+                    ConstraintSet::constrain_typevar(
+                        db,
+                        bound_typevar,
+                        self,
+                        Type::object(),
+                        relation,
+                    )
+                })
             }
 
             // `Never` is the bottom type, the empty set.
@@ -7138,6 +7102,18 @@ impl<'db> KnownInstanceType<'db> {
                         f.write_str("]")
                     }
                     KnownInstanceType::ConstraintSet(tracked_set) => {
+                        /*
+                        eprintln!(
+                            "==> constraints {}",
+                            tracked_set.constraints(self.db).display(self.db)
+                        );
+                        if let Some(vs) = tracked_set.valid_specializations(self.db) {
+                            let combined = (vs.clone())
+                                .implies(self.db, || tracked_set.constraints(self.db).clone());
+                            eprintln!("==> valid specs {}", vs.display(self.db));
+                            eprintln!("==> combined    {}", combined.display(self.db));
+                        }
+                        */
                         let constraints = tracked_set.limit_to_valid_specializations(self.db);
                         if constraints.is_always_satisfied() {
                             f.write_str("ty_extensions.ConstraintSet[always]")
