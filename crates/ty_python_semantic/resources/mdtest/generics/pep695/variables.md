@@ -137,27 +137,47 @@ class Sub(Base): ...
 class Unrelated: ...
 
 def unbounded_unconstrained[T, U](t: T, u: U) -> None:
-    reveal_type(is_assignable_to(T, T))  # revealed: ty_extensions.ConstraintSet[always]
-    reveal_type(is_assignable_to(T, object))  # revealed: ty_extensions.ConstraintSet[always]
-    reveal_type(is_assignable_to(T, Super))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_assignable_to(T, Any))  # revealed: ty_extensions.ConstraintSet[always]
-    reveal_type(is_assignable_to(Any, T))  # revealed: ty_extensions.ConstraintSet[always]
-    reveal_type(is_assignable_to(U, U))  # revealed: ty_extensions.ConstraintSet[always]
-    reveal_type(is_assignable_to(U, object))  # revealed: ty_extensions.ConstraintSet[always]
-    reveal_type(is_assignable_to(U, Super))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_assignable_to(T, U))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_assignable_to(U, T))  # revealed: ty_extensions.ConstraintSet[never]
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_assignable_to(T, T))
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_assignable_to(T, object))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_assignable_to(T, Super))
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_assignable_to(T, Any))
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_assignable_to(Any, T))
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_assignable_to(U, U))
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_assignable_to(U, object))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_assignable_to(U, Super))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_assignable_to(T, U))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_assignable_to(U, T))
 
-    reveal_type(is_subtype_of(T, T))  # revealed: ty_extensions.ConstraintSet[always]
-    reveal_type(is_subtype_of(T, object))  # revealed: ty_extensions.ConstraintSet[always]
-    reveal_type(is_subtype_of(T, Super))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(T, Any))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(Any, T))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(U, U))  # revealed: ty_extensions.ConstraintSet[always]
-    reveal_type(is_subtype_of(U, object))  # revealed: ty_extensions.ConstraintSet[always]
-    reveal_type(is_subtype_of(U, Super))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(T, U))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(U, T))  # revealed: ty_extensions.ConstraintSet[never]
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_subtype_of(T, T))
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_subtype_of(T, object))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(T, Super))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(T, Any))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(Any, T))
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_subtype_of(U, U))
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_subtype_of(U, object))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(U, Super))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(T, U))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(U, T))
 ```
 
 A bounded typevar is assignable to its bound, and a bounded, fully static typevar is a subtype of
@@ -177,32 +197,52 @@ def bounded[T: Super](t: T) -> None:
     reveal_type(is_assignable_to(Any, T))
     # revealed: ty_extensions.ConstraintSet[all valid specializations: (T@bounded ≤ Super)]
     reveal_type(is_assignable_to(T, Super))
-    reveal_type(is_assignable_to(T, Sub))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_assignable_to(Super, T))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_assignable_to(Sub, T))  # revealed: ty_extensions.ConstraintSet[never]
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_assignable_to(T, Sub))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_assignable_to(Super, T))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_assignable_to(Sub, T))
 
-    reveal_type(is_subtype_of(T, Any))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(Any, T))  # revealed: ty_extensions.ConstraintSet[never]
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(T, Any))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(Any, T))
     # revealed: ty_extensions.ConstraintSet[all valid specializations: (T@bounded ≤ Super)]
     reveal_type(is_subtype_of(T, Super))
-    reveal_type(is_subtype_of(T, Sub))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(Super, T))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(Sub, T))  # revealed: ty_extensions.ConstraintSet[never]
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(T, Sub))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(Super, T))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(Sub, T))
 
 def bounded_by_gradual[T: Any](t: T) -> None:
-    reveal_type(is_assignable_to(T, Any))  # revealed: ty_extensions.ConstraintSet[always]
-    reveal_type(is_assignable_to(Any, T))  # revealed: ty_extensions.ConstraintSet[always]
-    reveal_type(is_assignable_to(T, Super))  # revealed: ty_extensions.ConstraintSet[always]
-    reveal_type(is_assignable_to(Super, T))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_assignable_to(T, Sub))  # revealed: ty_extensions.ConstraintSet[always]
-    reveal_type(is_assignable_to(Sub, T))  # revealed: ty_extensions.ConstraintSet[never]
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_assignable_to(T, Any))
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_assignable_to(Any, T))
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_assignable_to(T, Super))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_assignable_to(Super, T))
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_assignable_to(T, Sub))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_assignable_to(Sub, T))
 
-    reveal_type(is_subtype_of(T, Any))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(Any, T))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(T, Super))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(Super, T))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(T, Sub))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(Sub, T))  # revealed: ty_extensions.ConstraintSet[never]
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(T, Any))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(Any, T))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(T, Super))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(Super, T))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(T, Sub))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(Sub, T))
 
 @final
 class FinalClass: ...
@@ -214,13 +254,17 @@ def bounded_final[T: FinalClass](t: T) -> None:
     reveal_type(is_assignable_to(Any, T))
     # revealed: ty_extensions.ConstraintSet[all valid specializations: (T@bounded_final ≤ FinalClass)]
     reveal_type(is_assignable_to(T, FinalClass))
-    reveal_type(is_assignable_to(FinalClass, T))  # revealed: ty_extensions.ConstraintSet[never]
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_assignable_to(FinalClass, T))
 
-    reveal_type(is_subtype_of(T, Any))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(Any, T))  # revealed: ty_extensions.ConstraintSet[never]
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(T, Any))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(Any, T))
     # revealed: ty_extensions.ConstraintSet[all valid specializations: (T@bounded_final ≤ FinalClass)]
     reveal_type(is_subtype_of(T, FinalClass))
-    reveal_type(is_subtype_of(FinalClass, T))  # revealed: ty_extensions.ConstraintSet[never]
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(FinalClass, T))
 ```
 
 Two distinct fully static typevars are not subtypes of each other, even if they have the same
@@ -230,18 +274,26 @@ typevars to `Never` in addition to that final class.
 
 ```py
 def two_bounded[T: Super, U: Super](t: T, u: U) -> None:
-    reveal_type(is_assignable_to(T, U))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_assignable_to(U, T))  # revealed: ty_extensions.ConstraintSet[never]
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_assignable_to(T, U))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_assignable_to(U, T))
 
-    reveal_type(is_subtype_of(T, U))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(U, T))  # revealed: ty_extensions.ConstraintSet[never]
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(T, U))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(U, T))
 
 def two_final_bounded[T: FinalClass, U: FinalClass](t: T, u: U) -> None:
-    reveal_type(is_assignable_to(T, U))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_assignable_to(U, T))  # revealed: ty_extensions.ConstraintSet[never]
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_assignable_to(T, U))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_assignable_to(U, T))
 
-    reveal_type(is_subtype_of(T, U))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(U, T))  # revealed: ty_extensions.ConstraintSet[never]
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(T, U))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(U, T))
 ```
 
 A constrained fully static typevar is assignable to the union of its constraints, but not to any of
@@ -256,7 +308,8 @@ def constrained[T: (Base, Unrelated)](t: T) -> None:
     reveal_type(is_assignable_to(T, Super))
     # revealed: ty_extensions.ConstraintSet[some valid specializations: (T@constrained = Base)]
     reveal_type(is_assignable_to(T, Base))
-    reveal_type(is_assignable_to(T, Sub))  # revealed: ty_extensions.ConstraintSet[never]
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_assignable_to(T, Sub))
     # revealed: ty_extensions.ConstraintSet[some valid specializations: (T@constrained = Unrelated)]
     reveal_type(is_assignable_to(T, Unrelated))
     # revealed: ty_extensions.ConstraintSet[all valid specializations: (T@constrained = Base) ∨ (T@constrained = Unrelated)]
@@ -269,10 +322,12 @@ def constrained[T: (Base, Unrelated)](t: T) -> None:
     reveal_type(is_assignable_to(T, Sub | Unrelated))
     # revealed: ty_extensions.ConstraintSet[all valid specializations: (T@constrained = Base) ∨ (T@constrained = Unrelated)]
     reveal_type(is_assignable_to(Any, T))
-    reveal_type(is_assignable_to(Super, T))  # revealed: ty_extensions.ConstraintSet[never]
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_assignable_to(Super, T))
     # revealed: ty_extensions.ConstraintSet[some valid specializations: (T@constrained = Unrelated)]
     reveal_type(is_assignable_to(Unrelated, T))
-    reveal_type(is_assignable_to(Super | Unrelated, T))  # revealed: ty_extensions.ConstraintSet[never]
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_assignable_to(Super | Unrelated, T))
     # revealed: ty_extensions.ConstraintSet[all valid specializations: (T@constrained = Base) ∨ (T@constrained = Unrelated)]
     reveal_type(is_assignable_to(Intersection[Base, Unrelated], T))
 
@@ -280,64 +335,95 @@ def constrained[T: (Base, Unrelated)](t: T) -> None:
     reveal_type(is_subtype_of(T, Super))
     # revealed: ty_extensions.ConstraintSet[some valid specializations: (T@constrained = Base)]
     reveal_type(is_subtype_of(T, Base))
-    reveal_type(is_subtype_of(T, Sub))  # revealed: ty_extensions.ConstraintSet[never]
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(T, Sub))
     # revealed: ty_extensions.ConstraintSet[some valid specializations: (T@constrained = Unrelated)]
     reveal_type(is_subtype_of(T, Unrelated))
-    reveal_type(is_subtype_of(T, Any))  # revealed: ty_extensions.ConstraintSet[never]
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(T, Any))
     # revealed: ty_extensions.ConstraintSet[all valid specializations: (T@constrained = Base) ∨ (T@constrained = Unrelated)]
     reveal_type(is_subtype_of(T, Super | Unrelated))
     # revealed: ty_extensions.ConstraintSet[all valid specializations: (T@constrained = Base) ∨ (T@constrained = Unrelated)]
     reveal_type(is_subtype_of(T, Base | Unrelated))
     # revealed: ty_extensions.ConstraintSet[some valid specializations: (T@constrained = Unrelated)]
     reveal_type(is_subtype_of(T, Sub | Unrelated))
-    reveal_type(is_subtype_of(Any, T))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(Super, T))  # revealed: ty_extensions.ConstraintSet[never]
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(Any, T))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(Super, T))
     # revealed: ty_extensions.ConstraintSet[some valid specializations: (T@constrained = Unrelated)]
     reveal_type(is_subtype_of(Unrelated, T))
-    reveal_type(is_subtype_of(Super | Unrelated, T))  # revealed: ty_extensions.ConstraintSet[never]
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(Super | Unrelated, T))
     # revealed: ty_extensions.ConstraintSet[all valid specializations: (T@constrained = Base) ∨ (T@constrained = Unrelated)]
     reveal_type(is_subtype_of(Intersection[Base, Unrelated], T))
 
 def constrained_by_gradual[T: (Base, Any)](t: T) -> None:
-    reveal_type(is_assignable_to(T, Super))  # revealed: ty_extensions.ConstraintSet[always]
-    reveal_type(is_assignable_to(T, Base))  # revealed: ty_extensions.ConstraintSet[always]
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_assignable_to(T, Super))
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_assignable_to(T, Base))
     # revealed: ty_extensions.ConstraintSet[some valid specializations: (T@constrained_by_gradual ≠ Base)]
     reveal_type(is_assignable_to(T, Sub))
     # revealed: ty_extensions.ConstraintSet[some valid specializations: (T@constrained_by_gradual ≠ Base)]
     reveal_type(is_assignable_to(T, Unrelated))
-    reveal_type(is_assignable_to(T, Any))  # revealed: ty_extensions.ConstraintSet[always]
-    reveal_type(is_assignable_to(T, Super | Any))  # revealed: ty_extensions.ConstraintSet[always]
-    reveal_type(is_assignable_to(T, Super | Unrelated))  # revealed: ty_extensions.ConstraintSet[always]
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_assignable_to(T, Any))
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_assignable_to(T, Super | Any))
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_assignable_to(T, Super | Unrelated))
     # revealed: ty_extensions.ConstraintSet[some valid specializations: (T@constrained_by_gradual ≠ Base)]
     reveal_type(is_assignable_to(Super, T))
-    reveal_type(is_assignable_to(Base, T))  # revealed: ty_extensions.ConstraintSet[always]
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_assignable_to(Base, T))
     # revealed: ty_extensions.ConstraintSet[some valid specializations: (T@constrained_by_gradual ≠ Base)]
     reveal_type(is_assignable_to(Unrelated, T))
-    reveal_type(is_assignable_to(Any, T))  # revealed: ty_extensions.ConstraintSet[always]
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_assignable_to(Any, T))
     # revealed: ty_extensions.ConstraintSet[some valid specializations: (T@constrained_by_gradual ≠ Base)]
     reveal_type(is_assignable_to(Super | Any, T))
-    reveal_type(is_assignable_to(Base | Any, T))  # revealed: ty_extensions.ConstraintSet[always]
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_assignable_to(Base | Any, T))
     # revealed: ty_extensions.ConstraintSet[some valid specializations: (T@constrained_by_gradual ≠ Base)]
     reveal_type(is_assignable_to(Super | Unrelated, T))
-    reveal_type(is_assignable_to(Intersection[Base, Unrelated], T))  # revealed: ty_extensions.ConstraintSet[always]
-    reveal_type(is_assignable_to(Intersection[Base, Any], T))  # revealed: ty_extensions.ConstraintSet[always]
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_assignable_to(Intersection[Base, Unrelated], T))
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_assignable_to(Intersection[Base, Any], T))
 
-    reveal_type(is_subtype_of(T, Super))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(T, Base))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(T, Sub))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(T, Unrelated))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(T, Any))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(T, Super | Any))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(T, Super | Unrelated))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(Super, T))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(Base, T))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(Unrelated, T))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(Any, T))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(Super | Any, T))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(Base | Any, T))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(Super | Unrelated, T))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(Intersection[Base, Unrelated], T))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(Intersection[Base, Any], T))  # revealed: ty_extensions.ConstraintSet[never]
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(T, Super))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(T, Base))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(T, Sub))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(T, Unrelated))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(T, Any))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(T, Super | Any))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(T, Super | Unrelated))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(Super, T))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(Base, T))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(Unrelated, T))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(Any, T))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(Super | Any, T))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(Base | Any, T))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(Super | Unrelated, T))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(Intersection[Base, Unrelated], T))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(Intersection[Base, Any], T))
 ```
 
 Two distinct fully static typevars are not subtypes of each other, even if they have the same
@@ -396,8 +482,10 @@ def union_with_dynamic[T: Base, U: (Base, Unrelated)](t: T, u: U) -> None:
     # revealed: ty_extensions.ConstraintSet[all valid specializations: (U@union_with_dynamic = Base) ∨ (U@union_with_dynamic = Unrelated)]
     reveal_type(is_assignable_to(U | Any, U))
 
-    reveal_type(is_subtype_of(T | Any, T))  # revealed: ty_extensions.ConstraintSet[never]
-    reveal_type(is_subtype_of(U | Any, U))  # revealed: ty_extensions.ConstraintSet[never]
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(T | Any, T))
+    # revealed: ty_extensions.ConstraintSet[never]
+    reveal_type(is_subtype_of(U | Any, U))
 ```
 
 And an intersection of a typevar with another type is always a subtype of the TypeVar:
@@ -716,11 +804,15 @@ of) itself.
 from ty_extensions import is_assignable_to, is_subtype_of, Not
 
 def intersection_is_assignable[T](t: T) -> None:
-    reveal_type(is_assignable_to(Intersection[T, None], T))  # revealed: ty_extensions.ConstraintSet[always]
-    reveal_type(is_assignable_to(Intersection[T, Not[None]], T))  # revealed: ty_extensions.ConstraintSet[always]
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_assignable_to(Intersection[T, None], T))
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_assignable_to(Intersection[T, Not[None]], T))
 
-    reveal_type(is_subtype_of(Intersection[T, None], T))  # revealed: ty_extensions.ConstraintSet[always]
-    reveal_type(is_subtype_of(Intersection[T, Not[None]], T))  # revealed: ty_extensions.ConstraintSet[always]
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_subtype_of(Intersection[T, None], T))
+    # revealed: ty_extensions.ConstraintSet[always]
+    reveal_type(is_subtype_of(Intersection[T, Not[None]], T))
 ```
 
 ## Narrowing
