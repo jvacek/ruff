@@ -21,6 +21,7 @@ inferred based on the `TypedDict` definition:
 ```py
 alice: Person = {"name": "Alice", "age": 30}
 
+reveal_type(alice)  # revealed: Person
 reveal_type(alice["name"])  # revealed: str
 reveal_type(alice["age"])  # revealed: int | None
 
@@ -63,6 +64,75 @@ eve2b = Person(age=22)
 eve3a: Person = {"name": "Eve", "age": 25, "extra": True}
 # error: [invalid-key] "Invalid key access on TypedDict `Person`: Unknown key "extra""
 eve3b = Person(name="Eve", age=25, extra=True)
+```
+
+Assignments to keys are also validated:
+
+```py
+# error: [invalid-assignment] "Invalid assignment to key "name" with declared type `str` on TypedDict `Person`: value of type `None`"
+alice["name"] = None
+
+# error: [invalid-assignment] "Invalid assignment to key "name" with declared type `str` on TypedDict `Person`: value of type `None`"
+bob["name"] = None
+```
+
+Assignments to non-existing keys are disallowed:
+
+```py
+# error: [invalid-key] "Invalid key access on TypedDict `Person`: Unknown key "extra""
+alice["extra"] = True
+
+# error: [invalid-key] "Invalid key access on TypedDict `Person`: Unknown key "extra""
+bob["extra"] = True
+```
+
+## Basic
+
+A `TypedDict` can also be defined using functional syntax:
+
+```py
+from typing import TypedDict
+
+Person = TypedDict("Person", { "name": str, "age": int | None })
+
+reveal_type(Person)  # revealed: typing.TypedDict
+```
+
+And can be instantiated identically:
+
+```py
+alice: Person = {"name": "Alice", "age": 30}
+
+reveal_type(alice)  # revealed: Person
+reveal_type(alice["name"])  # revealed: str
+reveal_type(alice["age"])  # revealed: int | None
+
+# error: [invalid-key] "Invalid key access on TypedDict `Person`: Unknown key "non_existing""
+reveal_type(alice["non_existing"])  # revealed: Unknown
+
+bob = Person(name="Bob", age=25)
+
+reveal_type(bob["name"])  # revealed: str
+reveal_type(bob["age"])  # revealed: int | None
+
+# error: [invalid-key] "Invalid key access on TypedDict `Person`: Unknown key "non_existing""
+reveal_type(bob["non_existing"])  # revealed: Unknown
+```
+
+Methods that are available on `dict`s are also available on `TypedDict`s:
+
+```py
+bob.update(age=26)
+```
+
+The construction of a `TypedDict` is checked for type correctness:
+
+```py
+# error: [invalid-argument-type] "Invalid argument to key "name" with declared type `str` on TypedDict `Person`"
+eve1a: Person = {"name": b"Eve", "age": None}
+
+# error: [missing-typed-dict-key] "Missing required key 'name' in TypedDict `Person` constructor"
+eve2b = Person(age=22)
 ```
 
 Assignments to keys are also validated:

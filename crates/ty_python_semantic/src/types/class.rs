@@ -1267,7 +1267,7 @@ impl MethodDecorator {
 }
 
 /// Kind-specific metadata for different types of fields
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, get_size2::GetSize)]
 pub(crate) enum FieldKind<'db> {
     /// `NamedTuple` field metadata
     NamedTuple { default_ty: Option<Type<'db>> },
@@ -1293,8 +1293,8 @@ pub(crate) enum FieldKind<'db> {
 }
 
 /// Metadata regarding a dataclass field/attribute or a `TypedDict` "item" / key-value pair.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Field<'db> {
+#[derive(Debug, Clone, PartialEq, Eq, Hash, get_size2::GetSize)]
+pub struct Field<'db> {
     /// The declared type of the field
     pub(crate) declared_ty: Type<'db>,
     /// Kind-specific metadata for this field
@@ -1304,7 +1304,7 @@ pub(crate) struct Field<'db> {
     pub(crate) single_declaration: Option<Definition<'db>>,
 }
 
-impl Field<'_> {
+impl<'db> Field<'db> {
     pub(crate) const fn is_required(&self) -> bool {
         match &self.kind {
             FieldKind::NamedTuple { default_ty } => default_ty.is_none(),
@@ -1321,6 +1321,21 @@ impl Field<'_> {
         match &self.kind {
             FieldKind::TypedDict { is_read_only, .. } => *is_read_only,
             _ => false,
+        }
+    }
+
+    pub(super) fn apply_type_mapping_impl<'a>(
+        self,
+        db: &'db dyn Db,
+        type_mapping: &TypeMapping<'a, 'db>,
+        visitor: &ApplyTypeMappingVisitor<'db>,
+    ) -> Self {
+        Field {
+            kind: self.kind,
+            single_declaration: self.single_declaration,
+            declared_ty: self
+                .declared_ty
+                .apply_type_mapping_impl(db, type_mapping, visitor),
         }
     }
 }
@@ -3744,6 +3759,7 @@ pub enum KnownClass {
     DefaultDict,
     Deque,
     OrderedDict,
+    TypedDict,
     // sys
     VersionInfo,
     // dataclasses
@@ -3863,6 +3879,7 @@ impl KnownClass {
             | Self::NamedTupleLike
             | Self::ConstraintSet
             | Self::ProtocolMeta
+            | Self::TypedDict
             | Self::TypedDictFallback => Some(Truthiness::Ambiguous),
 
             Self::Tuple => None,
@@ -3944,6 +3961,7 @@ impl KnownClass {
             | KnownClass::NamedTupleFallback
             | KnownClass::NamedTupleLike
             | KnownClass::ConstraintSet
+            | KnownClass::TypedDict
             | KnownClass::TypedDictFallback
             | KnownClass::BuiltinFunctionType
             | KnownClass::ProtocolMeta
@@ -3955,6 +3973,7 @@ impl KnownClass {
     /// Return `true` if this class is a (true) subclass of `typing.TypedDict`.
     pub(crate) const fn is_typed_dict_subclass(self) -> bool {
         match self {
+            KnownClass::TypedDict => true,
             KnownClass::Bool
             | KnownClass::Object
             | KnownClass::Bytes
@@ -4104,6 +4123,7 @@ impl KnownClass {
             | KnownClass::Field
             | KnownClass::KwOnly
             | KnownClass::InitVar
+            | KnownClass::TypedDict
             | KnownClass::TypedDictFallback
             | KnownClass::NamedTupleLike
             | KnownClass::NamedTupleFallback
@@ -4201,6 +4221,7 @@ impl KnownClass {
             | Self::InitVar
             | Self::NamedTupleFallback
             | Self::ConstraintSet
+            | Self::TypedDict
             | Self::TypedDictFallback
             | Self::BuiltinFunctionType
             | Self::ProtocolMeta
@@ -4290,6 +4311,7 @@ impl KnownClass {
             | KnownClass::Path
             | KnownClass::ConstraintSet
             | KnownClass::InitVar => false,
+            KnownClass::TypedDict => false,
             KnownClass::NamedTupleFallback | KnownClass::TypedDictFallback => true,
         }
     }
@@ -4388,6 +4410,7 @@ impl KnownClass {
             Self::NamedTupleFallback => "NamedTupleFallback",
             Self::NamedTupleLike => "NamedTupleLike",
             Self::ConstraintSet => "ConstraintSet",
+            Self::TypedDict => "TypedDict",
             Self::TypedDictFallback => "TypedDictFallback",
             Self::Template => "Template",
             Self::Path => "Path",
@@ -4665,7 +4688,8 @@ impl KnownClass {
             | Self::Counter
             | Self::DefaultDict
             | Self::Deque
-            | Self::OrderedDict => KnownModule::Collections,
+            | Self::OrderedDict
+            | Self::TypedDict => KnownModule::Collections,
             Self::Field | Self::KwOnly | Self::InitVar => KnownModule::Dataclasses,
             Self::NamedTupleFallback | Self::TypedDictFallback => KnownModule::TypeCheckerInternals,
             Self::NamedTupleLike | Self::ConstraintSet => KnownModule::TyExtensions,
@@ -4750,6 +4774,7 @@ impl KnownClass {
             | Self::NamedTupleFallback
             | Self::NamedTupleLike
             | Self::ConstraintSet
+            | Self::TypedDict
             | Self::TypedDictFallback
             | Self::BuiltinFunctionType
             | Self::ProtocolMeta
@@ -4837,6 +4862,7 @@ impl KnownClass {
             | Self::NamedTupleFallback
             | Self::NamedTupleLike
             | Self::ConstraintSet
+            | Self::TypedDict
             | Self::TypedDictFallback
             | Self::BuiltinFunctionType
             | Self::ProtocolMeta
@@ -4904,6 +4930,7 @@ impl KnownClass {
             "defaultdict" => Self::DefaultDict,
             "deque" => Self::Deque,
             "OrderedDict" => Self::OrderedDict,
+            "TypedDict" => Self::TypedDict,
             "_Alias" => Self::StdlibAlias,
             "_SpecialForm" => Self::SpecialForm,
             "_NoDefaultType" => Self::NoDefaultType,
@@ -5004,6 +5031,7 @@ impl KnownClass {
             | Self::KwOnly
             | Self::InitVar
             | Self::NamedTupleFallback
+            | Self::TypedDict
             | Self::TypedDictFallback
             | Self::NamedTupleLike
             | Self::ConstraintSet
