@@ -6947,7 +6947,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                 ast::UnaryOp::Invert,
                 Type::KnownInstance(KnownInstanceType::ConstraintSet(constraints)),
             ) => {
-                let valid_specializations = constraints.valid_specializations(self.db()).cloned();
+                let valid_specializations = constraints.valid_specializations(self.db()).copied();
                 let constraints = constraints.constraints(self.db());
                 let result = constraints.negate(self.db());
                 Type::KnownInstance(KnownInstanceType::ConstraintSet(

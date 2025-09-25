@@ -266,7 +266,7 @@ impl<'db> ConstraintSet<'db> {
     /// into the equivalent `¬p ∨ (p ∧ q)`. This ensures that the constraints under which `q` is
     /// true are compatible with the assumptions introduced by `p`.
     pub(crate) fn implies(self, db: &'db dyn Db, other: impl FnOnce() -> Self) -> Self {
-        self.clone().negate(db).or(db, || self.and(db, other))
+        self.negate(db).or(db, || self.and(db, other))
     }
 
     pub(crate) fn range(

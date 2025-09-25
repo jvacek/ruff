@@ -6915,18 +6915,18 @@ impl get_size2::GetSize for ValidSpecializationsConstraintSet<'_> {}
 
 impl<'db> ValidSpecializationsConstraintSet<'db> {
     fn limit_to_valid_specializations(self, db: &'db dyn Db) -> ConstraintSet<'db> {
-        let constraints = self.constraints(db).clone();
+        let constraints = self.constraints(db);
         let Some(valid_specializations) = self.valid_specializations(db) else {
-            return constraints;
+            return *constraints;
         };
-        constraints.and(db, || valid_specializations.clone())
+        constraints.and(db, || *valid_specializations)
     }
 
     fn holds_for_all_valid_specializations(self, db: &'db dyn Db) -> bool {
         let constraints = self.constraints(db);
         match self.valid_specializations(db) {
-            Some(valid_specializations) => (valid_specializations.clone())
-                .implies(db, || self.constraints(db).clone())
+            Some(valid_specializations) => valid_specializations
+                .implies(db, || *self.constraints(db))
                 .is_always_satisfied(),
             _ => constraints.is_always_satisfied(),
         }
