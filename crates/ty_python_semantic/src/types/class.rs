@@ -14,6 +14,7 @@ use crate::semantic_index::symbol::Symbol;
 use crate::semantic_index::{
     DeclarationWithConstraint, SemanticIndex, attribute_declarations, attribute_scopes,
 };
+use crate::types::call::CallArgumentTypes;
 use crate::types::constraints::{ConstraintSet, IteratorConstraintsExtension};
 use crate::types::context::InferContext;
 use crate::types::diagnostic::{INVALID_LEGACY_TYPE_VARIABLE, INVALID_TYPE_ALIAS_TYPE};
@@ -4909,6 +4910,7 @@ impl KnownClass {
         index: &SemanticIndex<'db>,
         overload: &mut Binding<'db>,
         call_arguments: &CallArguments<'_, 'db>,
+        call_argument_types: &CallArgumentTypes<'db>,
         call_expression: &ast::ExprCall,
     ) {
         let db = context.db();
@@ -5127,7 +5129,7 @@ impl KnownClass {
                         let elements = UnionType::new(
                             db,
                             overload
-                                .arguments_for_parameter(call_arguments, 1)
+                                .arguments_for_parameter(call_arguments, call_argument_types, 1)
                                 .map(|(_, ty)| ty)
                                 .collect::<Box<_>>(),
                         );

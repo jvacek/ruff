@@ -4853,11 +4853,10 @@ impl<'db> Type<'db> {
     fn try_call(
         self,
         db: &'db dyn Db,
-        argument_types: &CallArguments<'_, 'db>,
+        arguments: &CallArguments<'_, 'db>,
     ) -> Result<Bindings<'db>, CallError<'db>> {
-        self.bindings(db)
-            .match_parameters(db, argument_types)
-            .check_types(db, argument_types, &TypeContext::default())
+        let (bindings, argument_types) = self.bindings(db).match_parameters(db, arguments);
+        bindings.check_types(db, arguments, &argument_types, &TypeContext::default())
     }
 
     /// Look up a dunder method on the meta-type of `self` and call it.
@@ -4889,7 +4888,7 @@ impl<'db> Type<'db> {
         self,
         db: &'db dyn Db,
         name: &str,
-        argument_types: &mut CallArguments<'_, 'db>,
+        arguments: &mut CallArguments<'_, 'db>,
         policy: MemberLookupPolicy,
     ) -> Result<Bindings<'db>, CallDunderError<'db>> {
         // Implicit calls to dunder methods never access instance members, so we pass
@@ -4903,10 +4902,14 @@ impl<'db> Type<'db> {
             .place
         {
             Place::Type(dunder_callable, boundness) => {
-                let bindings = dunder_callable
-                    .bindings(db)
-                    .match_parameters(db, argument_types)
-                    .check_types(db, argument_types, &TypeContext::default())?;
+                let (bindings, argument_types) =
+                    dunder_callable.bindings(db).match_parameters(db, arguments);
+                let bindings = bindings.check_types(
+                    db,
+                    arguments,
+                    &argument_types,
+                    &TypeContext::default(),
+                )?;
                 if boundness == Boundness::PossiblyUnbound {
                     return Err(CallDunderError::PossiblyUnbound(Box::new(bindings)));
                 }
@@ -5389,8 +5392,7 @@ impl<'db> Type<'db> {
         let new_call_outcome = new_method.and_then(|new_method| {
             match new_method.place.try_call_dunder_get(db, self_type) {
                 Place::Type(new_method, boundness) => {
-                    let result =
-                        new_method.try_call(db, argument_types.with_self(Some(self_type)).as_ref());
+                    let result = new_method.try_call(db, &argument_types.with_self(self_type));
                     if boundness == Boundness::PossiblyUnbound {
                         Some(Err(DunderNewCallError::PossiblyUnbound(result.err())))
                     } else {

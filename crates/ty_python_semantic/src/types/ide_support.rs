@@ -877,7 +877,7 @@ pub fn call_signature_details<'db>(
             CallArguments::from_arguments(&call_expr.arguments, |_, splatted_value| {
                 splatted_value.inferred_type(model)
             });
-        let bindings = callable_type
+        let (bindings, _) = callable_type
             .bindings(db)
             .match_parameters(db, &call_arguments);
 

@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use itertools::{Either, Itertools};
 use ruff_python_ast as ast;
 
@@ -90,21 +88,16 @@ impl<'a, 'db> CallArguments<'a, 'db> {
         self.types.iter().map(|ty| ty.unwrap_or_else(Type::unknown))
     }
 
-    /// Prepend an optional extra synthetic argument (for a `self` or `cls` parameter) to the front
-    /// of this argument list. (If `bound_self` is none, we return the argument list
-    /// unmodified.)
-    pub(crate) fn with_self(&self, bound_self: Option<Type<'db>>) -> Cow<'_, Self> {
-        if bound_self.is_some() {
-            let arguments = std::iter::once(Argument::Synthetic)
-                .chain(self.arguments.iter().copied())
-                .collect();
-            let types = std::iter::once(bound_self)
-                .chain(self.types.iter().copied())
-                .collect();
-            Cow::Owned(CallArguments { arguments, types })
-        } else {
-            Cow::Borrowed(self)
-        }
+    /// Prepend a extra synthetic argument (for a `self` or `cls` parameter) to the front
+    /// of this argument list.)
+    pub(crate) fn with_self(&self, bound_self: Type<'db>) -> Self {
+        let arguments = std::iter::once(Argument::Synthetic)
+            .chain(self.arguments.iter().copied())
+            .collect();
+        let types = std::iter::once(Some(bound_self))
+            .chain(self.types.iter().copied())
+            .collect();
+        CallArguments { arguments, types }
     }
 
     pub(crate) fn iter(&self) -> impl Iterator<Item = (Argument<'a>, Option<Type<'db>>)> + '_ {
@@ -117,32 +110,89 @@ impl<'a, 'db> CallArguments<'a, 'db> {
         (self.arguments.iter().copied()).zip(self.types.iter_mut())
     }
 
+    pub(crate) fn iter_with_types<'iter>(
+        &'iter self,
+        argument_types: &'iter CallArgumentTypes<'db>,
+    ) -> impl Iterator<Item = (Argument<'a>, Option<Type<'db>>)> + 'iter {
+        (self.arguments.iter().copied()).zip(argument_types.iter().copied())
+    }
+}
+
+impl<'a, 'db> FromIterator<(Argument<'a>, Option<Type<'db>>)> for CallArguments<'a, 'db> {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = (Argument<'a>, Option<Type<'db>>)>,
+    {
+        let (arguments, types) = iter.into_iter().unzip();
+        Self { arguments, types }
+    }
+}
+
+// TODO: Consider removing this, and go back to just storing nested `CallArguments`.
+#[derive(Clone, Debug)]
+pub(crate) struct CallArgumentTypes<'db> {
+    types: Vec<Option<Type<'db>>>,
+}
+
+impl<'db> CallArgumentTypes<'db> {
+    pub(crate) fn new(types: Vec<Option<Type<'db>>>) -> Self {
+        Self { types }
+    }
+
+    pub(crate) fn types(&self) -> &[Option<Type<'db>>] {
+        &self.types
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.types.len()
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &Option<Type<'db>>> {
+        self.types.iter()
+    }
+
+    pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = &mut Option<Type<'db>>> {
+        self.types.iter_mut()
+    }
+
+    pub(crate) fn with_self(&self, bound_self: Type<'db>) -> Self {
+        let types = std::iter::once(Some(bound_self))
+            .chain(self.types.iter().copied())
+            .collect();
+
+        CallArgumentTypes { types }
+    }
+}
+
+impl<'db> CallArgumentTypes<'db> {
     /// Returns an iterator on performing [argument type expansion].
     ///
     /// Each element of the iterator represents a set of argument lists, where each argument list
     /// contains the same arguments, but with one or more of the argument types expanded.
     ///
+    /// The iterator will return an element for every argument, even if it could not be expanded.
+    ///
     /// [argument type expansion]: https://typing.python.org/en/latest/spec/overload.html#argument-type-expansion
-    pub(super) fn expand(&self, db: &'db dyn Db) -> impl Iterator<Item = Expansion<'a, 'db>> + '_ {
+    pub(super) fn expand(&self, db: &'db dyn Db) -> impl Iterator<Item = Expansion<'db>> + '_ {
         /// Maximum number of argument lists that can be generated in a single expansion step.
         static MAX_EXPANSIONS: usize = 512;
 
         /// Represents the state of the expansion process.
-        enum State<'a, 'b, 'db> {
+        enum State<'a, 'db> {
             LimitReached(usize),
-            Expanding(ExpandingState<'a, 'b, 'db>),
+            Expanding(ExpandingState<'a, 'db>),
         }
 
         /// Represents the expanding state with either the initial types or the expanded types.
         ///
         /// This is useful to avoid cloning the initial types vector if none of the types can be
         /// expanded.
-        enum ExpandingState<'a, 'b, 'db> {
-            Initial(&'b Vec<Option<Type<'db>>>),
-            Expanded(Vec<CallArguments<'a, 'db>>),
+        enum ExpandingState<'a, 'db> {
+            Initial(&'a [Option<Type<'db>>]),
+            Expanded(Vec<CallArgumentTypes<'db>>),
         }
 
-        impl<'db> ExpandingState<'_, '_, 'db> {
+        impl<'db> ExpandingState<'_, 'db> {
             fn len(&self) -> usize {
                 match self {
                     ExpandingState::Initial(_) => 1,
@@ -152,11 +202,9 @@ impl<'a, 'db> CallArguments<'a, 'db> {
 
             fn iter(&self) -> impl Iterator<Item = &[Option<Type<'db>>]> + '_ {
                 match self {
-                    ExpandingState::Initial(types) => {
-                        Either::Left(std::iter::once(types.as_slice()))
-                    }
+                    ExpandingState::Initial(types) => Either::Left(std::iter::once(*types)),
                     ExpandingState::Expanded(expanded) => {
-                        Either::Right(expanded.iter().map(CallArguments::types))
+                        Either::Right(expanded.iter().map(CallArgumentTypes::types))
                     }
                 }
             }
@@ -165,7 +213,7 @@ impl<'a, 'db> CallArguments<'a, 'db> {
         let mut index = 0;
 
         std::iter::successors(
-            Some(State::Expanding(ExpandingState::Initial(&self.types))),
+            Some(State::Expanding(ExpandingState::Initial(self.types()))),
             move |previous| {
                 let state = match previous {
                     State::LimitReached(index) => return Some(State::LimitReached(*index)),
@@ -174,7 +222,7 @@ impl<'a, 'db> CallArguments<'a, 'db> {
 
                 // Find the next type that can be expanded.
                 let expanded_types = loop {
-                    let arg_type = self.types.get(index)?;
+                    let arg_type = self.types().get(index)?;
                     if let Some(arg_type) = arg_type {
                         if let Some(expanded_types) = expand_type(db, *arg_type) {
                             break expanded_types;
@@ -198,10 +246,7 @@ impl<'a, 'db> CallArguments<'a, 'db> {
                     for subtype in &expanded_types {
                         let mut new_expanded_types = pre_expanded_types.to_vec();
                         new_expanded_types[index] = Some(*subtype);
-                        expanded_arguments.push(CallArguments::new(
-                            self.arguments.clone(),
-                            new_expanded_types,
-                        ));
+                        expanded_arguments.push(CallArgumentTypes::new(new_expanded_types));
                     }
                 }
 
@@ -226,8 +271,8 @@ impl<'a, 'db> CallArguments<'a, 'db> {
 
 /// Represents a single element of the expansion process for argument types for [`expand`].
 ///
-/// [`expand`]: CallArguments::expand
-pub(super) enum Expansion<'a, 'db> {
+/// [`expand`]: CallArgumentTypes::expand
+pub(super) enum Expansion<'db> {
     /// Indicates that the expansion process has reached the maximum number of argument lists
     /// that can be generated in a single step.
     ///
@@ -237,17 +282,7 @@ pub(super) enum Expansion<'a, 'db> {
 
     /// Contains the expanded argument lists, where each list contains the same arguments, but with
     /// one or more of the argument types expanded.
-    Expanded(Vec<CallArguments<'a, 'db>>),
-}
-
-impl<'a, 'db> FromIterator<(Argument<'a>, Option<Type<'db>>)> for CallArguments<'a, 'db> {
-    fn from_iter<T>(iter: T) -> Self
-    where
-        T: IntoIterator<Item = (Argument<'a>, Option<Type<'db>>)>,
-    {
-        let (arguments, types) = iter.into_iter().unzip();
-        Self { arguments, types }
-    }
+    Expanded(Vec<CallArgumentTypes<'db>>),
 }
 
 /// Returns `true` if the type can be expanded into its subtypes.

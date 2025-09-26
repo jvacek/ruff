@@ -44,6 +44,7 @@ use crate::semantic_index::symbol::{ScopedSymbolId, Symbol};
 use crate::semantic_index::{
     ApplicableConstraints, EnclosingSnapshotResult, SemanticIndex, place_table,
 };
+use crate::types::call::bind::MatchedCallArguments;
 use crate::types::call::{Binding, Bindings, CallArguments, CallError, CallErrorKind};
 use crate::types::class::{CodeGeneratorKind, FieldKind, MetaclassErrorKind, MethodDecorator};
 use crate::types::context::{InNoTypeCheck, InferContext};
@@ -4917,6 +4918,51 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
         self.infer_expression(expression, TypeContext::default())
     }
 
+    fn infer_matched_argument_types<'a>(
+        &mut self,
+        ast_arguments: &ast::Arguments,
+        argument_types: &mut MatchedCallArguments<'db>,
+        bindings: &Bindings<'db>,
+    ) {
+        for (binding, argument_types) in iter::zip(bindings, argument_types.bindings_mut()) {
+            for (overload, argument_types) in
+                iter::zip(binding.overloads(), argument_types.overloads_mut())
+            {
+                debug_assert_eq!(ast_arguments.len(), argument_types.len());
+                debug_assert_eq!(argument_types.len(), bindings.argument_forms().len());
+
+                for (argument_index, argument_type, argument_form, ast_argument) in itertools::izip!(
+                    0..,
+                    argument_types.iter_mut(),
+                    bindings.argument_forms(),
+                    ast_arguments.arguments_source_order()
+                ) {
+                    let ast_argument = match ast_argument {
+                        // We already inferred the type of splatted arguments.
+                        ast::ArgOrKeyword::Arg(ast::Expr::Starred(_))
+                        | ast::ArgOrKeyword::Keyword(ast::Keyword { arg: None, .. }) => continue,
+                        ast::ArgOrKeyword::Arg(arg) => arg,
+                        ast::ArgOrKeyword::Keyword(ast::Keyword { value, .. }) => value,
+                    };
+
+                    for (parameter_index, variadic_argument_type) in
+                        overload.argument_matches()[argument_index].iter()
+                    {
+                        if variadic_argument_type.is_some() {
+                            continue;
+                        }
+
+                        let parameter = &overload.signature.parameters()[parameter_index];
+                        let tcx = TypeContext::new(parameter.annotated_type());
+
+                        *argument_type =
+                            Some(self.infer_argument_type(ast_argument, *argument_form, tcx));
+                    }
+                }
+            }
+        }
+    }
+
     fn infer_argument_types<'a>(
         &mut self,
         ast_arguments: &ast::Arguments,
@@ -5082,7 +5128,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
             return;
         }
         let previous = self.expressions.insert(expression.into(), ty);
-        assert_eq!(previous, None);
+        assert!(previous == None || previous == Some(ty));
     }
 
     fn infer_number_literal_expression(&mut self, literal: &ast::ExprNumberLiteral) -> Type<'db> {
@@ -5977,10 +6023,11 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
             }
         }
 
-        let bindings = callable_type
+        let (bindings, mut call_argument_types) = callable_type
             .bindings(self.db())
             .match_parameters(self.db(), &call_arguments);
-        self.infer_argument_types(arguments, &mut call_arguments, bindings.argument_forms());
+
+        self.infer_matched_argument_types(arguments, &mut call_argument_types, &bindings);
 
         // Validate `TypedDict` constructor calls after argument type inference
         if let Some(class_literal) = callable_type.into_class_literal() {
@@ -5998,17 +6045,23 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
             }
         }
 
-        let mut bindings = match bindings.check_types(self.db(), &call_arguments, &tcx) {
-            Ok(bindings) => bindings,
-            Err(CallError(_, bindings)) => {
-                bindings.report_diagnostics(&self.context, call_expression.into());
-                return bindings.return_type(self.db());
-            }
-        };
+        let mut bindings =
+            match bindings.check_types(self.db(), &call_arguments, &call_argument_types, &tcx) {
+                Ok(bindings) => bindings,
+                Err(CallError(_, bindings)) => {
+                    bindings.report_diagnostics(&self.context, call_expression.into());
+                    return bindings.return_type(self.db());
+                }
+            };
 
-        for binding in &mut bindings {
+        for (binding, call_argument_types) in
+            iter::zip(&mut bindings, call_argument_types.bindings())
+        {
             let binding_type = binding.callable_type;
-            for (_, overload) in binding.matching_overloads_mut() {
+            for ((_, overload), call_argument_types) in binding
+                .matching_overloads_mut()
+                .zip(call_argument_types.overloads())
+            {
                 match binding_type {
                     Type::FunctionLiteral(function_literal) => {
                         if let Some(known_function) = function_literal.known(self.db()) {
@@ -6016,6 +6069,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                                 &self.context,
                                 overload,
                                 &call_arguments,
+                                &call_argument_types,
                                 call_expression,
                                 self.file(),
                             );
@@ -6028,6 +6082,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                                 self.index,
                                 overload,
                                 &call_arguments,
+                                &call_argument_types,
                                 call_expression,
                             );
                         }
@@ -8549,7 +8604,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
         specialize: impl FnOnce(&[Option<Type<'db>>]) -> Type<'db>,
     ) -> Type<'db> {
         let slice_node = subscript.slice.as_ref();
-        let call_argument_types = match slice_node {
+        let call_arguments = match slice_node {
             ast::Expr::Tuple(tuple) => {
                 let arguments = CallArguments::positional(
                     tuple.elts.iter().map(|elt| self.infer_type_expression(elt)),
@@ -8563,10 +8618,15 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
             _ => CallArguments::positional([self.infer_type_expression(slice_node)]),
         };
         let binding = Binding::single(value_ty, generic_context.signature(self.db()));
-        let bindings = match Bindings::from(binding)
-            .match_parameters(self.db(), &call_argument_types)
-            .check_types(self.db(), &call_argument_types, &TypeContext::default())
-        {
+        // TODO: Call directly on `Binding`, not `Bindings`, to avoid the indirection.
+        let (bindings, call_argument_types) =
+            Bindings::from(binding).match_parameters(self.db(), &call_arguments);
+        let bindings = match bindings.check_types(
+            self.db(),
+            &call_arguments,
+            &call_argument_types,
+            &TypeContext::default(),
+        ) {
             Ok(bindings) => bindings,
             Err(CallError(_, bindings)) => {
                 bindings.report_diagnostics(&self.context, subscript.into());

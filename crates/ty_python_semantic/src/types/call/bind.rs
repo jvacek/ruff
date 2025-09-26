@@ -3,8 +3,9 @@
 //! [signatures][crate::types::signatures], we have to handle the fact that the callable might be a
 //! union of types, each of which might contain multiple overloads.
 
+use std::borrow::Cow;
 use std::collections::HashSet;
-use std::fmt;
+use std::{fmt, iter};
 
 use itertools::{Either, Itertools};
 use ruff_db::parsed::parsed_module;
@@ -16,7 +17,7 @@ use crate::Program;
 use crate::db::Db;
 use crate::dunder_all::dunder_all_names;
 use crate::place::{Boundness, Place};
-use crate::types::call::arguments::{Expansion, is_expandable_type};
+use crate::types::call::arguments::{CallArgumentTypes, is_expandable_type};
 use crate::types::diagnostic::{
     CALL_NON_CALLABLE, CONFLICTING_ARGUMENT_FORMS, INVALID_ARGUMENT_TYPE, MISSING_ARGUMENT,
     NO_MATCHING_OVERLOAD, PARAMETER_ALREADY_ASSIGNED, POSITIONAL_ONLY_PARAMETER_AS_KWARG,
@@ -37,6 +38,42 @@ use crate::types::{
 };
 use ruff_db::diagnostic::{Annotation, Diagnostic, SubDiagnostic, SubDiagnosticSeverity};
 use ruff_python_ast::{self as ast, PythonVersion};
+
+#[derive(Clone, Debug)]
+pub(crate) struct MatchedCallArguments<'db> {
+    bindings: SmallVec<[BindingCallArguments<'db>; 1]>,
+}
+
+impl<'db> MatchedCallArguments<'db> {
+    pub(crate) fn bindings(&self) -> impl Iterator<Item = &BindingCallArguments<'db>> {
+        self.bindings.iter()
+    }
+
+    pub(crate) fn bindings_mut(&mut self) -> impl Iterator<Item = &mut BindingCallArguments<'db>> {
+        self.bindings.iter_mut()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct BindingCallArguments<'db> {
+    overloads: SmallVec<[CallArgumentTypes<'db>; 1]>,
+}
+
+impl<'a, 'db> From<&CallArguments<'a, 'db>> for CallArgumentTypes<'db> {
+    fn from(arguments: &CallArguments<'a, 'db>) -> Self {
+        CallArgumentTypes::new(arguments.types().to_owned())
+    }
+}
+
+impl<'db> BindingCallArguments<'db> {
+    pub(crate) fn overloads(&self) -> impl Iterator<Item = &CallArgumentTypes<'db>> {
+        self.overloads.iter()
+    }
+
+    pub(crate) fn overloads_mut(&mut self) -> impl Iterator<Item = &mut CallArgumentTypes<'db>> {
+        self.overloads.iter_mut()
+    }
+}
 
 /// Binding information for a possible union of callables. At a call site, the arguments must be
 /// compatible with _all_ of the types in the union for the call to be valid.
@@ -102,18 +139,33 @@ impl<'db> Bindings<'db> {
     ///
     /// Once you have argument types available, you can call [`check_types`][Self::check_types] to
     /// verify that each argument type is assignable to the corresponding parameter type.
-    pub(crate) fn match_parameters(
+    pub(crate) fn match_parameters<'a>(
         mut self,
         db: &'db dyn Db,
-        arguments: &CallArguments<'_, 'db>,
-    ) -> Self {
+        arguments: &CallArguments<'a, 'db>,
+    ) -> (Self, MatchedCallArguments<'db>) {
         let mut argument_forms = ArgumentForms::new(arguments.len());
         for binding in &mut self.elements {
             binding.match_parameters(db, arguments, &mut argument_forms);
         }
         argument_forms.shrink_to_fit();
         self.argument_forms = argument_forms;
-        self
+
+        let binding_arguments = self
+            .elements
+            .iter()
+            .map(|element| BindingCallArguments {
+                overloads: (0..element.overloads.len())
+                    .map(|_| CallArgumentTypes::from(arguments))
+                    .collect(),
+            })
+            .collect();
+
+        let arguments = MatchedCallArguments {
+            bindings: binding_arguments,
+        };
+
+        (self, arguments)
     }
 
     /// Verify that the type of each argument is assignable to type of the parameter that it was
@@ -131,12 +183,13 @@ impl<'db> Bindings<'db> {
     pub(crate) fn check_types(
         mut self,
         db: &'db dyn Db,
-        argument_types: &CallArguments<'_, 'db>,
+        arguments: &CallArguments<'_, 'db>,
+        argument_types: &MatchedCallArguments<'db>,
         call_expression_tcx: &TypeContext<'db>,
     ) -> Result<Self, CallError<'db>> {
-        for element in &mut self.elements {
+        for (element, argument_types) in iter::zip(&mut self.elements, argument_types.bindings()) {
             if let Some(mut updated_argument_forms) =
-                element.check_types(db, argument_types, call_expression_tcx)
+                element.check_types(db, arguments, argument_types, call_expression_tcx)
             {
                 // If this element returned a new set of argument forms (indicating successful
                 // argument type expansion), update the `Bindings` with these forms.
@@ -1276,7 +1329,10 @@ impl<'db> CallableBinding<'db> {
     ) {
         // If this callable is a bound method, prepend the self instance onto the arguments list
         // before checking.
-        let arguments = arguments.with_self(self.bound_type);
+        let arguments = match self.bound_type {
+            None => Cow::Borrowed(arguments),
+            Some(bound_self) => Cow::Owned(arguments.with_self(bound_self)),
+        };
 
         for overload in &mut self.overloads {
             overload.match_parameters(db, arguments.as_ref(), argument_forms);
@@ -1286,12 +1342,27 @@ impl<'db> CallableBinding<'db> {
     fn check_types(
         &mut self,
         db: &'db dyn Db,
-        argument_types: &CallArguments<'_, 'db>,
+        arguments: &CallArguments<'_, 'db>,
+        argument_types: &BindingCallArguments<'db>,
         call_expression_tcx: &TypeContext<'db>,
     ) -> Option<ArgumentForms> {
         // If this callable is a bound method, prepend the self instance onto the arguments list
         // before checking.
-        let argument_types = argument_types.with_self(self.bound_type);
+        let (arguments, argument_types) = match self.bound_type {
+            None => (Cow::Borrowed(arguments), Cow::Borrowed(argument_types)),
+            Some(bound_self) => {
+                let arguments = arguments.with_self(bound_self);
+                let overloads = argument_types
+                    .overloads()
+                    .map(|argument_types| argument_types.with_self(bound_self))
+                    .collect();
+
+                (
+                    Cow::Owned(arguments),
+                    Cow::Owned(BindingCallArguments { overloads }),
+                )
+            }
+        };
 
         // Step 1: Check the result of the arity check which is done by `match_parameters`
         let matching_overload_indexes = match self.matching_overload_index() {
@@ -1300,15 +1371,26 @@ impl<'db> CallableBinding<'db> {
                 // still perform type checking for non-overloaded function to provide better user
                 // experience.
                 if let [overload] = self.overloads.as_mut_slice() {
-                    overload.check_types(db, argument_types.as_ref(), call_expression_tcx);
+                    overload.check_types(
+                        db,
+                        arguments.as_ref(),
+                        &argument_types.overloads[0],
+                        call_expression_tcx,
+                    );
                 }
+
                 return None;
             }
             MatchingOverloadIndex::Single(index) => {
                 // If only one candidate overload remains, it is the winning match. Evaluate it as
                 // a regular (non-overloaded) call.
                 self.matching_overload_index = Some(index);
-                self.overloads[index].check_types(db, argument_types.as_ref(), call_expression_tcx);
+                self.overloads[index].check_types(
+                    db,
+                    arguments.as_ref(),
+                    &argument_types.overloads[index],
+                    call_expression_tcx,
+                );
                 return None;
             }
             MatchingOverloadIndex::Multiple(indexes) => {
@@ -1319,8 +1401,13 @@ impl<'db> CallableBinding<'db> {
 
         // Step 2: Evaluate each remaining overload as a regular (non-overloaded) call to determine
         // whether it is compatible with the supplied argument list.
-        for (_, overload) in self.matching_overloads_mut() {
-            overload.check_types(db, argument_types.as_ref(), call_expression_tcx);
+        for (overload_index, overload) in self.matching_overloads_mut() {
+            overload.check_types(
+                db,
+                arguments.as_ref(),
+                &argument_types.overloads[overload_index],
+                call_expression_tcx,
+            );
         }
 
         match self.matching_overload_index() {
@@ -1352,7 +1439,8 @@ impl<'db> CallableBinding<'db> {
                         // If two or more candidate overloads remain, proceed to step 5.
                         self.filter_overloads_using_any_or_unknown(
                             db,
-                            argument_types.as_ref(),
+                            &arguments,
+                            &argument_types,
                             &indexes,
                         );
                     }
@@ -1365,29 +1453,45 @@ impl<'db> CallableBinding<'db> {
 
         // Step 3: Perform "argument type expansion". Reference:
         // https://typing.python.org/en/latest/spec/overload.html#argument-type-expansion
-        let mut expansions = argument_types.expand(db).peekable();
+        let overload_expansions = argument_types
+            .overloads()
+            .filter_map(|argument_types| {
+                let mut expanded = argument_types.expand(db).peekable();
+                if expanded.peek().is_some() {
+                    Some(expanded)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
 
-        // Return early if there are no argument types to expand.
-        expansions.peek()?;
+        // Return early if there are no argument types to expand for any overload.
+        if overload_expansions.is_empty() {
+            return None;
+        }
 
         // At this point, there's at least one argument that can be expanded.
         //
         // This heuristic tries to detect if there's any need to perform argument type expansion or
         // not by checking whether there are any non-expandable argument type that cannot be
         // assigned to any of the overloads.
-        for (argument_index, (argument, argument_type)) in argument_types.iter().enumerate() {
+        for (argument_index, (argument, _)) in arguments.iter().enumerate() {
             // TODO: Remove `Keywords` once `**kwargs` support is added
             if matches!(argument, Argument::Synthetic | Argument::Keywords) {
                 continue;
             }
-            let Some(argument_type) = argument_type else {
-                continue;
-            };
-            if is_expandable_type(db, argument_type) {
-                continue;
-            }
             let mut is_argument_assignable_to_any_overload = false;
-            'overload: for overload in &self.overloads {
+            'overload: for (overload_index, overload) in self.overloads.iter().enumerate() {
+                let argument_type =
+                    argument_types.overloads[overload_index].types()[argument_index];
+
+                let Some(argument_type) = argument_type else {
+                    continue;
+                };
+                if is_expandable_type(db, argument_type) {
+                    continue;
+                }
+
                 for parameter_index in &overload.argument_matches[argument_index].parameters {
                     let parameter_type = overload.signature.parameters()[*parameter_index]
                         .annotated_type()
@@ -1400,9 +1504,8 @@ impl<'db> CallableBinding<'db> {
             }
             if !is_argument_assignable_to_any_overload {
                 tracing::debug!(
-                    "Argument at {argument_index} (`{}`) is not assignable to any of the \
-                    remaining overloads, skipping argument type expansion",
-                    argument_type.display(db)
+                    "Argument at {argument_index} is not assignable to any of the \
+                    remaining overloads, skipping argument type expansion"
                 );
                 return None;
             }
@@ -1414,7 +1517,7 @@ impl<'db> CallableBinding<'db> {
         // the non-expanded argument types.
         let post_evaluation_snapshot = snapshotter.take(self);
 
-        for expansion in expansions {
+        for expansion in overload_expansions {
             let expanded_argument_lists = match expansion {
                 Expansion::LimitReached(index) => {
                     snapshotter.restore(self, post_evaluation_snapshot);
@@ -1586,6 +1689,7 @@ impl<'db> CallableBinding<'db> {
         &mut self,
         db: &'db dyn Db,
         arguments: &CallArguments<'_, 'db>,
+        _argument_types: &BindingCallArguments<'db>,
         matching_overload_indexes: &[usize],
     ) {
         // These are the parameter indexes that matches the arguments that participate in the
@@ -1599,7 +1703,7 @@ impl<'db> CallableBinding<'db> {
         // participating parameter indexes.
         let mut top_materialized_argument_types = vec![];
 
-        for (argument_index, argument_type) in arguments.iter_types().enumerate() {
+        for (argument_index, (_, argument_type)) in arguments.iter().enumerate() {
             let mut first_parameter_type: Option<Type<'db>> = None;
             let mut participating_parameter_index = None;
 
@@ -1624,7 +1728,11 @@ impl<'db> CallableBinding<'db> {
 
             if let Some(parameter_index) = participating_parameter_index {
                 participating_parameter_indexes.insert(parameter_index);
-                top_materialized_argument_types.push(argument_type.top_materialization(db));
+                top_materialized_argument_types.push(
+                    argument_type
+                        .unwrap_or_else(Type::unknown)
+                        .top_materialization(db),
+                );
             }
         }
 
@@ -1748,6 +1856,12 @@ impl<'db> CallableBinding<'db> {
                 }
             }
         }
+    }
+
+    /// Returns an iterator over the overloads for this call binding, including
+    /// those that did not match.
+    pub(crate) fn overloads(&self) -> impl Iterator<Item = &Binding<'db>> {
+        self.overloads.iter()
     }
 
     /// Returns an iterator over all the overloads that matched for this call binding.
@@ -2378,6 +2492,7 @@ struct ArgumentTypeChecker<'a, 'db> {
     db: &'db dyn Db,
     signature: &'a Signature<'db>,
     arguments: &'a CallArguments<'a, 'db>,
+    argument_types: &'a CallArgumentTypes<'db>,
     argument_matches: &'a [MatchedArgument<'db>],
     parameter_tys: &'a mut [Option<Type<'db>>],
     call_expression_tcx: &'a TypeContext<'db>,
@@ -2392,6 +2507,7 @@ impl<'a, 'db> ArgumentTypeChecker<'a, 'db> {
         db: &'db dyn Db,
         signature: &'a Signature<'db>,
         arguments: &'a CallArguments<'a, 'db>,
+        argument_types: &'a CallArgumentTypes<'db>,
         argument_matches: &'a [MatchedArgument<'db>],
         parameter_tys: &'a mut [Option<Type<'db>>],
         call_expression_tcx: &'a TypeContext<'db>,
@@ -2401,6 +2517,7 @@ impl<'a, 'db> ArgumentTypeChecker<'a, 'db> {
             db,
             signature,
             arguments,
+            argument_types,
             argument_matches,
             parameter_tys,
             call_expression_tcx,
@@ -2413,7 +2530,10 @@ impl<'a, 'db> ArgumentTypeChecker<'a, 'db> {
     fn enumerate_argument_types(
         &self,
     ) -> impl Iterator<Item = (usize, Option<usize>, Argument<'a>, Type<'db>)> + 'a {
-        let mut iter = self.arguments.iter().enumerate();
+        let mut iter = self
+            .arguments
+            .iter_with_types(self.argument_types)
+            .enumerate();
         let mut num_synthetic_args = 0;
         std::iter::from_fn(move || {
             let (argument_index, (argument, argument_type)) = iter.next()?;
@@ -2829,12 +2949,14 @@ impl<'db> Binding<'db> {
         &mut self,
         db: &'db dyn Db,
         arguments: &CallArguments<'_, 'db>,
+        argument_types: &CallArgumentTypes<'db>,
         call_expression_tcx: &TypeContext<'db>,
     ) {
         let mut checker = ArgumentTypeChecker::new(
             db,
             &self.signature,
             arguments,
+            argument_types,
             &self.argument_matches,
             &mut self.parameter_tys,
             call_expression_tcx,
@@ -2877,11 +2999,12 @@ impl<'db> Binding<'db> {
 
     pub(crate) fn arguments_for_parameter<'a>(
         &'a self,
-        argument_types: &'a CallArguments<'a, 'db>,
+        arguments: &'a CallArguments<'a, 'db>,
+        argument_types: &'a CallArgumentTypes<'db>,
         parameter_index: usize,
     ) -> impl Iterator<Item = (Argument<'a>, Type<'db>)> + 'a {
-        argument_types
-            .iter()
+        arguments
+            .iter_with_types(argument_types)
             .zip(&self.argument_matches)
             .filter(move |(_, argument_matches)| {
                 argument_matches.parameters.contains(&parameter_index)

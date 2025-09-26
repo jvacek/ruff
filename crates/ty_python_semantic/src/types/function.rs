@@ -64,7 +64,7 @@ use crate::semantic_index::ast_ids::HasScopedUseId;
 use crate::semantic_index::definition::Definition;
 use crate::semantic_index::scope::ScopeId;
 use crate::semantic_index::{FileScopeId, SemanticIndex, semantic_index};
-use crate::types::call::{Binding, CallArguments};
+use crate::types::call::{Binding, CallArgumentTypes, CallArguments};
 use crate::types::constraints::ConstraintSet;
 use crate::types::context::InferContext;
 use crate::types::diagnostic::{
@@ -1416,6 +1416,7 @@ impl KnownFunction {
         context: &InferContext<'db, '_>,
         overload: &mut Binding<'db>,
         call_arguments: &CallArguments<'_, 'db>,
+        call_argument_types: &CallArgumentTypes<'db>,
         call_expression: &ast::ExprCall,
         file: File,
     ) {
@@ -1425,7 +1426,7 @@ impl KnownFunction {
         match self {
             KnownFunction::RevealType => {
                 let revealed_type = overload
-                    .arguments_for_parameter(call_arguments, 0)
+                    .arguments_for_parameter(call_arguments, call_argument_types, 0)
                     .fold(UnionBuilder::new(db), |builder, (_, ty)| builder.add(ty))
                     .build();
                 if let Some(builder) =
