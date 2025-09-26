@@ -207,7 +207,7 @@ impl<'db> ConstraintSet<'db> {
                 upper.top_materialization(db),
             ),
         };
-        let node = RangeConstraint::new_node(db, lower, typevar, upper);
+        let node = ConstrainedTypeVar::new_node(db, lower, typevar, upper);
         Self { node }
     }
 
