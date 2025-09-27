@@ -4493,56 +4493,6 @@ impl<'db> Type<'db> {
                     .into()
                 }
 
-                Some(KnownClass::TypeVar) => {
-                    // ```py
-                    // class TypeVar:
-                    //     def __new__(
-                    //         cls,
-                    //         name: str,
-                    //         *constraints: Any,
-                    //         bound: Any | None = None,
-                    //         contravariant: bool = False,
-                    //         covariant: bool = False,
-                    //         infer_variance: bool = False,
-                    //         default: Any = ...,
-                    //     ) -> Self: ...
-                    // ```
-                    Binding::single(
-                        self,
-                        Signature::new(
-                            Parameters::new([
-                                Parameter::positional_or_keyword(Name::new_static("name"))
-                                    .with_annotated_type(Type::LiteralString),
-                                Parameter::variadic(Name::new_static("constraints"))
-                                    .deferred_type_form()
-                                    .with_annotated_type(Type::any()),
-                                Parameter::keyword_only(Name::new_static("bound"))
-                                    .deferred_type_form()
-                                    .with_annotated_type(UnionType::from_elements(
-                                        db,
-                                        [Type::any(), Type::none(db)],
-                                    ))
-                                    .with_default_type(Type::none(db)),
-                                Parameter::keyword_only(Name::new_static("default"))
-                                    .deferred_type_form()
-                                    .with_annotated_type(Type::any())
-                                    .with_default_type(KnownClass::NoneType.to_instance(db)),
-                                Parameter::keyword_only(Name::new_static("contravariant"))
-                                    .with_annotated_type(KnownClass::Bool.to_instance(db))
-                                    .with_default_type(Type::BooleanLiteral(false)),
-                                Parameter::keyword_only(Name::new_static("covariant"))
-                                    .with_annotated_type(KnownClass::Bool.to_instance(db))
-                                    .with_default_type(Type::BooleanLiteral(false)),
-                                Parameter::keyword_only(Name::new_static("infer_variance"))
-                                    .with_annotated_type(KnownClass::Bool.to_instance(db))
-                                    .with_default_type(Type::BooleanLiteral(false)),
-                            ]),
-                            Some(KnownClass::TypeVar.to_instance(db)),
-                        ),
-                    )
-                    .into()
-                }
-
                 Some(KnownClass::Deprecated) => {
                     // ```py
                     // class deprecated:

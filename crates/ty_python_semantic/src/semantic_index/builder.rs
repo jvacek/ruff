@@ -1626,9 +1626,10 @@ impl<'ast> Visitor<'ast> for SemanticIndexBuilder<'_, 'ast> {
                 self.visit_expr(&node.value);
 
                 // Optimization for the common case: if there's just one target, and it's not an
-                // unpacking, we don't need the RHS to be a standalone expression at all.
+                // unpacking, and the target is a simple name, we don't need the RHS to be a
+                // standalone expression at all.
                 if let [target] = &node.targets[..]
-                    && !matches!(target, ast::Expr::List(_) | ast::Expr::Tuple(_))
+                    && target.is_name_expr()
                 {
                     self.push_assignment(CurrentAssignment::Assign { node, unpack: None });
                     self.visit_expr(target);

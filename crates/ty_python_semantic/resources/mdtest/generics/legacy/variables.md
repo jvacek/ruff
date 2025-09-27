@@ -33,13 +33,12 @@ reveal_type(T.__name__)  # revealed: Literal["T"]
 from typing import TypeVar
 
 T = TypeVar("T")
-# TODO: no error
 # error: [invalid-legacy-type-variable]
 U: TypeVar = TypeVar("U")
 
-# error: [invalid-legacy-type-variable] "A legacy `typing.TypeVar` must be immediately assigned to a variable"
-# error: [invalid-type-form] "Function calls are not allowed in type expressions"
-TestList = list[TypeVar("W")]
+# error: [invalid-legacy-type-variable]
+tuple_with_typevar = ("foo", TypeVar("W"))
+reveal_type(tuple_with_typevar[1])  # revealed: TypeVar
 ```
 
 ### `TypeVar` parameter must match variable name
@@ -49,7 +48,7 @@ TestList = list[TypeVar("W")]
 ```py
 from typing import TypeVar
 
-# error: [invalid-legacy-type-variable] "The name of a legacy `typing.TypeVar` (`Q`) must match the name of the variable it is assigned to (`T`)"
+# error: [invalid-legacy-type-variable]
 T = TypeVar("Q")
 ```
 
@@ -64,6 +63,22 @@ T = TypeVar("T")
 
 # TODO: error
 T = TypeVar("T")
+```
+
+### No variadic arguments
+
+```py
+from typing import TypeVar
+
+types = (int, str)
+
+# error: [invalid-legacy-type-variable]
+T = TypeVar("T", *types)
+reveal_type(T)  # revealed: TypeVar
+
+# error: [invalid-legacy-type-variable]
+S = TypeVar("S", **{"bound": int})
+reveal_type(S)  # revealed: TypeVar
 ```
 
 ### Type variables with a default
@@ -90,6 +105,11 @@ reveal_type(S.__default__)  # revealed: NoDefault
 ```
 
 ### Using other typevars as a default
+
+```toml
+[environment]
+python-version = "3.13"
+```
 
 ```py
 from typing import Generic, TypeVar, Union
@@ -122,6 +142,20 @@ reveal_type(T.__constraints__)  # revealed: tuple[()]
 
 S = TypeVar("S")
 reveal_type(S.__bound__)  # revealed: None
+
+from typing import TypedDict
+
+# error: [invalid-type-form]
+T = TypeVar("T", bound=TypedDict)
+```
+
+The upper bound must be a valid type expression:
+
+```py
+from typing import TypedDict
+
+# error: [invalid-type-form]
+T = TypeVar("T", bound=TypedDict)
 ```
 
 ### Type variables with constraints
@@ -144,8 +178,8 @@ Constraints are not simplified relative to each other, even if one is a subtype 
 T = TypeVar("T", int, bool)
 reveal_type(T.__constraints__)  # revealed: tuple[int, bool]
 
-S = TypeVar("S", float)
-reveal_type(S.__constraints__)  # revealed: tuple[int | float]
+S = TypeVar("S", float, str)
+reveal_type(S.__constraints__)  # revealed: tuple[int | float, str]
 ```
 
 ### Cannot have only one constraint
@@ -156,8 +190,17 @@ reveal_type(S.__constraints__)  # revealed: tuple[int | float]
 ```py
 from typing import TypeVar
 
-# TODO: error: [invalid-type-variable-constraints]
+# error: [invalid-legacy-type-variable]
 T = TypeVar("T", int)
+```
+
+### Cannot have both bound and constraint
+
+```py
+from typing import TypeVar
+
+# error: [invalid-legacy-type-variable]
+T = TypeVar("T", int, str, bound=bytes)
 ```
 
 ### Cannot be both covariant and contravariant
@@ -186,6 +229,46 @@ T = TypeVar("T", covariant=cond())
 
 # error: [invalid-legacy-type-variable]
 U = TypeVar("U", contravariant=cond())
+```
+
+### Invalid keyword arguments
+
+```py
+from typing import TypeVar
+
+# error: [invalid-legacy-type-variable]
+T = TypeVar("T", invalid_keyword=True)
+```
+
+```pyi
+from typing import TypeVar
+
+# error: [invalid-legacy-type-variable]
+T = TypeVar("T", invalid_keyword=True)
+
+```
+
+### Constructor signature versioning
+
+```toml
+[environment]
+python-version = "3.10"
+```
+
+In a stub file, features from the latest supported Python version can be used on any version:
+
+```pyi
+from typing import TypeVar
+T = TypeVar("T", default=int)
+```
+
+But this raises an error in a non-stub file:
+
+```py
+from typing import TypeVar
+
+# error: [invalid-legacy-type-variable]
+T = TypeVar("T", default=int)
 ```
 
 ## Callability
@@ -256,13 +339,10 @@ S = TypeVar("S")
 T = TypeVar("T", bound=list[S])
 
 # TODO: error
-U = TypeVar("U", list["T"])
+U = TypeVar("U", list["T"], str)
 
 # TODO: error
-V = TypeVar("V", list[S], str)
-
-# TODO: error
-W = TypeVar("W", list["W"], str)
+V = TypeVar("V", list["V"], str)
 ```
 
 However, they are lazily evaluated and can cyclically refer to their own type:
@@ -279,6 +359,11 @@ reveal_type(G[list[G]]().x)  # revealed: list[G[Unknown]]
 ```
 
 ### Defaults
+
+```toml
+[environment]
+python-version = "3.13"
+```
 
 Defaults can be generic, but can only refer to earlier typevars:
 
