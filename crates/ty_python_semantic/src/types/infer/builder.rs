@@ -3967,7 +3967,8 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                 unpacked.expression_type(target)
             }
             TargetKind::Single => {
-                let value_ty = self.infer_standalone_expression(value, TypeContext::default());
+                let value_ty =
+                    self.infer_maybe_standalone_expression(value, TypeContext::default());
 
                 // `TYPE_CHECKING` is a special variable that should only be assigned `False`
                 // at runtime, but is always considered `True` in type checking.
