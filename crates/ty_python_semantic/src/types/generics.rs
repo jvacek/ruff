@@ -1,13 +1,10 @@
-use std::borrow::Cow;
-
 use itertools::Itertools;
-use ruff_db::parsed::ParsedModuleRef;
 use ruff_python_ast as ast;
 use rustc_hash::FxHashMap;
 
-use crate::semantic_index::SemanticIndex;
 use crate::semantic_index::definition::Definition;
-use crate::semantic_index::scope::{FileScopeId, NodeWithScopeKind};
+use crate::semantic_index::scope::{FileScopeId, NodeWithScopeKind, ScopeId};
+use crate::semantic_index::{SemanticIndex, semantic_index};
 use crate::types::class::ClassType;
 use crate::types::class_base::ClassBase;
 use crate::types::constraints::ConstraintSet;
@@ -16,10 +13,10 @@ use crate::types::instance::{Protocol, ProtocolInstanceType};
 use crate::types::signatures::{Parameter, Parameters, Signature};
 use crate::types::tuple::{TupleSpec, TupleType, walk_tuple_type};
 use crate::types::{
-    ApplyTypeMappingVisitor, BoundTypeVarInstance, FindLegacyTypeVarsVisitor, HasRelationToVisitor,
-    IsEquivalentVisitor, KnownClass, KnownInstanceType, MaterializationKind, NormalizedVisitor,
-    Type, TypeMapping, TypeRelation, TypeVarBoundOrConstraints, TypeVarInstance, TypeVarKind,
-    TypeVarVariance, UnionType, binding_type, declaration_type,
+    ApplyTypeMappingVisitor, BoundTypeVarInstance, ClassLiteral, FindLegacyTypeVarsVisitor,
+    HasRelationToVisitor, IsEquivalentVisitor, KnownClass, KnownInstanceType, MaterializationKind,
+    NormalizedVisitor, Type, TypeMapping, TypeRelation, TypeVarBoundOrConstraints, TypeVarInstance,
+    TypeVarKind, TypeVarVariance, UnionType, binding_type, declaration_type,
 };
 use crate::{Db, FxOrderSet};
 
@@ -27,7 +24,6 @@ use crate::{Db, FxOrderSet};
 /// scope.
 fn enclosing_generic_contexts<'db>(
     db: &'db dyn Db,
-    module: &ParsedModuleRef,
     index: &SemanticIndex<'db>,
     scope: FileScopeId,
 ) -> impl Iterator<Item = GenericContext<'db>> {
@@ -35,13 +31,13 @@ fn enclosing_generic_contexts<'db>(
         .ancestor_scopes(scope)
         .filter_map(|(_, ancestor_scope)| match ancestor_scope.node() {
             NodeWithScopeKind::Class(class) => {
-                let definition = index.expect_single_definition(class.node(module));
+                let definition = index.expect_single_definition(class);
                 binding_type(db, definition)
                     .into_class_literal()?
                     .generic_context(db)
             }
             NodeWithScopeKind::Function(function) => {
-                let definition = index.expect_single_definition(function.node(module));
+                let definition = index.expect_single_definition(function);
                 infer_definition_types(db, definition)
                     .undecorated_type()
                     .expect("function should have undecorated type")
@@ -50,7 +46,7 @@ fn enclosing_generic_contexts<'db>(
                     .generic_context
             }
             NodeWithScopeKind::TypeAlias(type_alias) => {
-                let definition = index.expect_single_definition(type_alias.node(module));
+                let definition = index.expect_single_definition(type_alias);
                 binding_type(db, definition)
                     .into_type_alias()?
                     .into_pep_695_type_alias()?
@@ -76,7 +72,6 @@ fn enclosing_generic_contexts<'db>(
 /// bind the typevar with that new binding context.
 pub(crate) fn bind_typevar<'db>(
     db: &'db dyn Db,
-    module: &ParsedModuleRef,
     index: &SemanticIndex<'db>,
     containing_scope: FileScopeId,
     typevar_binding_context: Option<Definition<'db>>,
@@ -87,19 +82,58 @@ pub(crate) fn bind_typevar<'db>(
         for ((_, inner), (_, outer)) in index.ancestor_scopes(containing_scope).tuple_windows() {
             if outer.kind().is_class() {
                 if let NodeWithScopeKind::Function(function) = inner.node() {
-                    let definition = index.expect_single_definition(function.node(module));
+                    let definition = index.expect_single_definition(function);
                     return Some(typevar.with_binding_context(db, definition));
                 }
             }
         }
     }
-    enclosing_generic_contexts(db, module, index, containing_scope)
+    enclosing_generic_contexts(db, index, containing_scope)
         .find_map(|enclosing_context| enclosing_context.binds_typevar(db, typevar))
         .or_else(|| {
             typevar_binding_context.map(|typevar_binding_context| {
                 typevar.with_binding_context(db, typevar_binding_context)
             })
         })
+}
+
+/// Create a `typing.Self` type variable for a given class.
+pub(crate) fn typing_self<'db>(
+    db: &'db dyn Db,
+    scope_id: ScopeId,
+    typevar_binding_context: Option<Definition<'db>>,
+    class: ClassLiteral<'db>,
+    typevar_to_type: &impl Fn(BoundTypeVarInstance<'db>) -> Type<'db>,
+) -> Option<Type<'db>> {
+    let index = semantic_index(db, scope_id.file(db));
+
+    let typevar = TypeVarInstance::new(
+        db,
+        ast::name::Name::new_static("Self"),
+        Some(class.definition(db)),
+        Some(
+            TypeVarBoundOrConstraints::UpperBound(Type::instance(
+                db,
+                class.identity_specialization(db, typevar_to_type),
+            ))
+            .into(),
+        ),
+        // According to the [spec], we can consider `Self`
+        // equivalent to an invariant type variable
+        // [spec]: https://typing.python.org/en/latest/spec/generics.html#self
+        Some(TypeVarVariance::Invariant),
+        None,
+        TypeVarKind::TypingSelf,
+    );
+
+    bind_typevar(
+        db,
+        index,
+        scope_id.file_scope_id(db),
+        typevar_binding_context,
+        typevar,
+    )
+    .map(typevar_to_type)
 }
 
 /// A list of formal type variables for a generic function, class, or type alias.
@@ -290,14 +324,17 @@ impl<'db> GenericContext<'db> {
     }
 
     /// Returns a specialization of this generic context where each typevar is mapped to itself.
-    /// (And in particular, to an _inferable_ version of itself, since this will be used in our
-    /// class constructor invocation machinery to infer a specialization for the class from the
-    /// arguments passed to its constructor.)
-    pub(crate) fn identity_specialization(self, db: &'db dyn Db) -> Specialization<'db> {
+    /// The second parameter can be `Type::TypeVar` or `Type::NonInferableTypeVar`, depending on
+    /// the use case.
+    pub(crate) fn identity_specialization(
+        self,
+        db: &'db dyn Db,
+        typevar_to_type: &impl Fn(BoundTypeVarInstance<'db>) -> Type<'db>,
+    ) -> Specialization<'db> {
         let types = self
             .variables(db)
             .iter()
-            .map(|typevar| Type::TypeVar(*typevar))
+            .map(|typevar| typevar_to_type(*typevar))
             .collect();
         self.specialize(db, types)
     }
@@ -391,7 +428,7 @@ impl<'db> GenericContext<'db> {
             // requirement for legacy contexts.)
             let partial = PartialSpecialization {
                 generic_context: self,
-                types: Cow::Borrowed(&expanded[0..idx]),
+                types: &expanded[0..idx],
             };
             let default =
                 default.apply_type_mapping(db, &TypeMapping::PartialSpecialization(partial));
@@ -946,18 +983,7 @@ impl<'db> Specialization<'db> {
 #[derive(Clone, Debug, Eq, Hash, PartialEq, get_size2::GetSize)]
 pub struct PartialSpecialization<'a, 'db> {
     generic_context: GenericContext<'db>,
-    types: Cow<'a, [Type<'db>]>,
-}
-
-pub(super) fn walk_partial_specialization<'db, V: super::visitor::TypeVisitor<'db> + ?Sized>(
-    db: &'db dyn Db,
-    specialization: &PartialSpecialization<'_, 'db>,
-    visitor: &V,
-) {
-    walk_generic_context(db, specialization.generic_context, visitor);
-    for ty in &*specialization.types {
-        visitor.visit_type(db, *ty);
-    }
+    types: &'a [Type<'db>],
 }
 
 impl<'db> PartialSpecialization<'_, 'db> {
@@ -973,31 +999,6 @@ impl<'db> PartialSpecialization<'_, 'db> {
             .variables(db)
             .get_index_of(&bound_typevar)?;
         self.types.get(index).copied()
-    }
-
-    pub(crate) fn to_owned(&self) -> PartialSpecialization<'db, 'db> {
-        PartialSpecialization {
-            generic_context: self.generic_context,
-            types: Cow::from(self.types.clone().into_owned()),
-        }
-    }
-
-    pub(crate) fn normalized_impl(
-        &self,
-        db: &'db dyn Db,
-        visitor: &NormalizedVisitor<'db>,
-    ) -> PartialSpecialization<'db, 'db> {
-        let generic_context = self.generic_context.normalized_impl(db, visitor);
-        let types: Cow<_> = self
-            .types
-            .iter()
-            .map(|ty| ty.normalized_impl(db, visitor))
-            .collect();
-
-        PartialSpecialization {
-            generic_context,
-            types,
-        }
     }
 }
 

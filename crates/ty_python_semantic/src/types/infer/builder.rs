@@ -92,9 +92,9 @@ use crate::types::{
     DynamicType, IntersectionBuilder, IntersectionType, KnownClass, KnownInstanceType,
     MemberLookupPolicy, MetaclassCandidate, PEP695TypeAliasType, Parameter, ParameterForm,
     Parameters, SpecialFormType, SubclassOfType, Truthiness, Type, TypeAliasType,
-    TypeAndQualifiers, TypeContext, TypeMapping, TypeQualifiers,
-    TypeVarBoundOrConstraintsEvaluation, TypeVarDefaultEvaluation, TypeVarInstance, TypeVarKind,
-    UnionBuilder, UnionType, ValidSpecializationsConstraintSet, binding_type, todo_type,
+    TypeAndQualifiers, TypeContext, TypeQualifiers, TypeVarBoundOrConstraintsEvaluation,
+    TypeVarDefaultEvaluation, TypeVarInstance, TypeVarKind, UnionBuilder, UnionType,
+    ValidSpecializationsConstraintSet, binding_type, todo_type,
 };
 use crate::types::{ClassBase, add_inferred_python_version_hint_to_diagnostic};
 use crate::unpack::{EvaluationMode, UnpackPosition};
@@ -2144,12 +2144,8 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
         let function_literal =
             FunctionLiteral::new(self.db(), overload_literal, inherited_generic_context);
 
-        let type_mappings = Box::default();
-        let mut inferred_ty = Type::FunctionLiteral(FunctionType::new(
-            self.db(),
-            function_literal,
-            type_mappings,
-        ));
+        let mut inferred_ty =
+            Type::FunctionLiteral(FunctionType::new(self.db(), function_literal, None, None));
         self.undecorated_type = Some(inferred_ty);
 
         for (decorator_ty, decorator_node) in decorator_types_and_nodes.iter().rev() {
@@ -5436,8 +5432,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
 
                 // Convert any element literals to their promoted type form to avoid excessively large
                 // unions for large nested list literals, which the constraint solver struggles with.
-                let inferred_elt_ty =
-                    inferred_elt_ty.apply_type_mapping(self.db(), &TypeMapping::PromoteLiterals);
+                let inferred_elt_ty = inferred_elt_ty.promote_literals(self.db());
 
                 builder
                     .infer(Type::TypeVar(*elt_ty), inferred_elt_ty)
@@ -5954,7 +5949,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                 // but constructor calls to `tuple[int]`, `tuple[int, ...]`, `tuple[int, *tuple[str, ...]]` (etc.)
                 // are handled by the default constructor-call logic (we synthesize a `__new__` method for them
                 // in `ClassType::own_class_member()`).
-                class.is_known(self.db(), KnownClass::Tuple) && class.is_not_generic()
+                class.is_known(self.db(), KnownClass::Tuple) && !class.is_generic()
             );
 
             // temporary special-casing for all subclasses of `enum.Enum`
@@ -8989,7 +8984,6 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                 if let Type::KnownInstance(KnownInstanceType::TypeVar(typevar)) = typevar {
                     bind_typevar(
                         self.db(),
-                        self.module(),
                         self.index,
                         self.scope().file_scope_id(self.db()),
                         self.typevar_binding_context,
