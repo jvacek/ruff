@@ -26,10 +26,9 @@ use crate::types::function::FunctionType;
 use crate::types::generics::{GenericContext, typing_self, walk_generic_context};
 use crate::types::infer::nearest_enclosing_class;
 use crate::types::{
-    ApplyTypeMappingVisitor, BindingContext, BoundTypeVarInstance, ClassType,
-    FindLegacyTypeVarsVisitor, HasRelationToVisitor, IsEquivalentVisitor, KnownClass,
-    MaterializationKind, NormalizedVisitor, TypeMapping, TypeRelation, VarianceInferable,
-    todo_type,
+    ApplyTypeMappingVisitor, BoundTypeVarInstance, ClassType, FindLegacyTypeVarsVisitor,
+    HasRelationToVisitor, IsEquivalentVisitor, KnownClass, MaterializationKind, NormalizedVisitor,
+    TypeMapping, TypeRelation, VarianceInferable, todo_type,
 };
 use crate::{Db, FxOrderSet};
 use ruff_python_ast::{self as ast, name::Name};
@@ -406,13 +405,7 @@ impl<'db> Signature<'db> {
             has_implicitly_positional_first_parameter,
         );
         let return_ty = function_node.returns.as_ref().map(|returns| {
-            let plain_return_ty = definition_expression_type(db, definition, returns.as_ref())
-                .apply_type_mapping(
-                    db,
-                    &TypeMapping::MarkTypeVarsInferable(Some(BindingContext::Definition(
-                        definition,
-                    ))),
-                );
+            let plain_return_ty = definition_expression_type(db, definition, returns.as_ref());
             if function_node.is_async && !is_generator {
                 KnownClass::CoroutineType
                     .to_specialized_instance(db, [Type::any(), Type::any(), plain_return_ty])
@@ -1252,7 +1245,7 @@ impl<'db> Parameters<'db> {
                     let class = nearest_enclosing_class(db, index, scope_id).unwrap();
 
                     Some(
-                        typing_self(db, scope_id, typevar_binding_context, class, &Type::TypeVar)
+                        typing_self(db, scope_id, typevar_binding_context, class)
                             .expect("We should always find the surrounding class for an implicit self: Self annotation"),
                     )
                 } else {
@@ -1673,14 +1666,9 @@ impl<'db> Parameter<'db> {
         kind: ParameterKind<'db>,
     ) -> Self {
         Self {
-            annotated_type: parameter.annotation().map(|annotation| {
-                definition_expression_type(db, definition, annotation).apply_type_mapping(
-                    db,
-                    &TypeMapping::MarkTypeVarsInferable(Some(BindingContext::Definition(
-                        definition,
-                    ))),
-                )
-            }),
+            annotated_type: parameter
+                .annotation()
+                .map(|annotation| definition_expression_type(db, definition, annotation)),
             kind,
             form: ParameterForm::Value,
             inferred_annotation: false,
