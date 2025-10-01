@@ -524,17 +524,19 @@ impl<'db> ClassType<'db> {
 
     /// Return `true` if `other` is present in this class's MRO.
     pub(super) fn is_subclass_of(self, db: &'db dyn Db, other: ClassType<'db>) -> bool {
-        self.when_subclass_of(db, other).is_always_satisfied()
+        self.when_subclass_of(db, other, None).is_always_satisfied()
     }
 
     pub(super) fn when_subclass_of(
         self,
         db: &'db dyn Db,
         other: ClassType<'db>,
+        inferable: Option<GenericContext<'db>>,
     ) -> ConstraintSet<'db> {
         self.has_relation_to_impl(
             db,
             other,
+            inferable,
             TypeRelation::Subtyping,
             &HasRelationToVisitor::default(),
         )
@@ -544,6 +546,7 @@ impl<'db> ClassType<'db> {
         self,
         db: &'db dyn Db,
         other: Self,
+        inferable: Option<GenericContext<'db>>,
         relation: TypeRelation,
         visitor: &HasRelationToVisitor<'db>,
     ) -> ConstraintSet<'db> {
@@ -568,6 +571,7 @@ impl<'db> ClassType<'db> {
                             base.specialization(db).has_relation_to_impl(
                                 db,
                                 other.specialization(db),
+                                inferable,
                                 relation,
                                 visitor,
                             )
@@ -591,6 +595,7 @@ impl<'db> ClassType<'db> {
         self,
         db: &'db dyn Db,
         other: ClassType<'db>,
+        inferable: Option<GenericContext<'db>>,
         visitor: &IsEquivalentVisitor<'db>,
     ) -> ConstraintSet<'db> {
         if self == other {
@@ -609,6 +614,7 @@ impl<'db> ClassType<'db> {
                     this.specialization(db).is_equivalent_to_impl(
                         db,
                         other.specialization(db),
+                        inferable,
                         visitor,
                     )
                 })

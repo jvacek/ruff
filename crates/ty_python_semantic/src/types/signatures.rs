@@ -162,10 +162,16 @@ impl<'db> CallableSignature<'db> {
         }
     }
 
-    fn is_subtype_of_impl(&self, db: &'db dyn Db, other: &Self) -> ConstraintSet<'db> {
+    fn is_subtype_of_impl(
+        &self,
+        db: &'db dyn Db,
+        other: &Self,
+        inferable: Option<GenericContext<'db>>,
+    ) -> ConstraintSet<'db> {
         self.has_relation_to_impl(
             db,
             other,
+            inferable,
             TypeRelation::Subtyping,
             &HasRelationToVisitor::default(),
         )
@@ -175,10 +181,18 @@ impl<'db> CallableSignature<'db> {
         &self,
         db: &'db dyn Db,
         other: &Self,
+        inferable: Option<GenericContext<'db>>,
         relation: TypeRelation,
         visitor: &HasRelationToVisitor<'db>,
     ) -> ConstraintSet<'db> {
-        Self::has_relation_to_inner(db, &self.overloads, &other.overloads, relation, visitor)
+        Self::has_relation_to_inner(
+            db,
+            &self.overloads,
+            &other.overloads,
+            inferable,
+            relation,
+            visitor,
+        )
     }
 
     /// Implementation of subtyping and assignability between two, possible overloaded, callable
@@ -187,13 +201,20 @@ impl<'db> CallableSignature<'db> {
         db: &'db dyn Db,
         self_signatures: &[Signature<'db>],
         other_signatures: &[Signature<'db>],
+        inferable: Option<GenericContext<'db>>,
         relation: TypeRelation,
         visitor: &HasRelationToVisitor<'db>,
     ) -> ConstraintSet<'db> {
         match (self_signatures, other_signatures) {
             ([self_signature], [other_signature]) => {
                 // Base case: both callable types contain a single signature.
-                self_signature.has_relation_to_impl(db, other_signature, relation, visitor)
+                self_signature.has_relation_to_impl(
+                    db,
+                    other_signature,
+                    inferable,
+                    relation,
+                    visitor,
+                )
             }
 
             // `self` is possibly overloaded while `other` is definitely not overloaded.
@@ -202,6 +223,7 @@ impl<'db> CallableSignature<'db> {
                     db,
                     std::slice::from_ref(self_signature),
                     other_signatures,
+                    inferable,
                     relation,
                     visitor,
                 )
@@ -213,6 +235,7 @@ impl<'db> CallableSignature<'db> {
                     db,
                     self_signatures,
                     std::slice::from_ref(other_signature),
+                    inferable,
                     relation,
                     visitor,
                 )
@@ -224,6 +247,7 @@ impl<'db> CallableSignature<'db> {
                     db,
                     self_signatures,
                     std::slice::from_ref(other_signature),
+                    inferable,
                     relation,
                     visitor,
                 )
@@ -238,20 +262,21 @@ impl<'db> CallableSignature<'db> {
         &self,
         db: &'db dyn Db,
         other: &Self,
+        inferable: Option<GenericContext<'db>>,
         visitor: &IsEquivalentVisitor<'db>,
     ) -> ConstraintSet<'db> {
         match (self.overloads.as_slice(), other.overloads.as_slice()) {
             ([self_signature], [other_signature]) => {
                 // Common case: both callable types contain a single signature, use the custom
                 // equivalence check instead of delegating it to the subtype check.
-                self_signature.is_equivalent_to_impl(db, other_signature, visitor)
+                self_signature.is_equivalent_to_impl(db, other_signature, inferable, visitor)
             }
             (_, _) => {
                 if self == other {
                     return ConstraintSet::from(true);
                 }
-                self.is_subtype_of_impl(db, other)
-                    .and(db, || other.is_subtype_of_impl(db, self))
+                self.is_subtype_of_impl(db, other, inferable)
+                    .and(db, || other.is_subtype_of_impl(db, self, inferable))
             }
         }
     }
@@ -554,6 +579,7 @@ impl<'db> Signature<'db> {
         &self,
         db: &'db dyn Db,
         other: &Signature<'db>,
+        inferable: Option<GenericContext<'db>>,
         visitor: &IsEquivalentVisitor<'db>,
     ) -> ConstraintSet<'db> {
         let mut result = ConstraintSet::from(true);
@@ -561,7 +587,10 @@ impl<'db> Signature<'db> {
             let self_type = self_type.unwrap_or(Type::unknown());
             let other_type = other_type.unwrap_or(Type::unknown());
             !result
-                .intersect(db, self_type.is_equivalent_to_impl(db, other_type, visitor))
+                .intersect(
+                    db,
+                    self_type.is_equivalent_to_impl(db, other_type, inferable, visitor),
+                )
                 .is_never_satisfied()
         };
 
@@ -637,6 +666,7 @@ impl<'db> Signature<'db> {
         &self,
         db: &'db dyn Db,
         other: &Signature<'db>,
+        inferable: Option<GenericContext<'db>>,
         relation: TypeRelation,
         visitor: &HasRelationToVisitor<'db>,
     ) -> ConstraintSet<'db> {
@@ -706,7 +736,10 @@ impl<'db> Signature<'db> {
             let type1 = type1.unwrap_or(Type::unknown());
             let type2 = type2.unwrap_or(Type::unknown());
             !result
-                .intersect(db, type1.has_relation_to_impl(db, type2, relation, visitor))
+                .intersect(
+                    db,
+                    type1.has_relation_to_impl(db, type2, inferable, relation, visitor),
+                )
                 .is_never_satisfied()
         };
 

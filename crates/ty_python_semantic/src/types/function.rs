@@ -892,6 +892,7 @@ impl<'db> FunctionType<'db> {
         self,
         db: &'db dyn Db,
         other: Self,
+        inferable: Option<GenericContext<'db>>,
         relation: TypeRelation,
         visitor: &HasRelationToVisitor<'db>,
     ) -> ConstraintSet<'db> {
@@ -911,13 +912,14 @@ impl<'db> FunctionType<'db> {
 
         let self_signature = self.signature(db);
         let other_signature = other.signature(db);
-        self_signature.has_relation_to_impl(db, other_signature, relation, visitor)
+        self_signature.has_relation_to_impl(db, other_signature, inferable, relation, visitor)
     }
 
     pub(crate) fn is_equivalent_to_impl(
         self,
         db: &'db dyn Db,
         other: Self,
+        inferable: Option<GenericContext<'db>>,
         visitor: &IsEquivalentVisitor<'db>,
     ) -> ConstraintSet<'db> {
         if self.normalized(db) == other.normalized(db) {
@@ -928,7 +930,7 @@ impl<'db> FunctionType<'db> {
         }
         let self_signature = self.signature(db);
         let other_signature = other.signature(db);
-        self_signature.is_equivalent_to_impl(db, other_signature, visitor)
+        self_signature.is_equivalent_to_impl(db, other_signature, inferable, visitor)
     }
 
     pub(crate) fn find_legacy_typevars_impl(
