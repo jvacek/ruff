@@ -21,7 +21,7 @@ use crate::{
         constraints::{ConstraintSet, IteratorConstraintsExtension},
         context::InferContext,
         diagnostic::report_undeclared_protocol_member,
-        generics::GenericContext,
+        generics::InferableTypeVars,
         signatures::{Parameter, Parameters},
         todo_type,
     },
@@ -519,7 +519,7 @@ impl<'a, 'db> ProtocolMember<'a, 'db> {
         &self,
         db: &'db dyn Db,
         other: Type<'db>,
-        inferable: Option<GenericContext<'db>>,
+        inferable: &InferableTypeVars<'db>,
         visitor: &IsDisjointVisitor<'db>,
     ) -> ConstraintSet<'db> {
         match &self.kind {
@@ -539,7 +539,7 @@ impl<'a, 'db> ProtocolMember<'a, 'db> {
         &self,
         db: &'db dyn Db,
         other: Type<'db>,
-        inferable: Option<GenericContext<'db>>,
+        inferable: &InferableTypeVars<'db>,
         relation: TypeRelation,
         visitor: &HasRelationToVisitor<'db>,
     ) -> ConstraintSet<'db> {
