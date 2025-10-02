@@ -519,7 +519,7 @@ impl<'a, 'db> ProtocolMember<'a, 'db> {
         &self,
         db: &'db dyn Db,
         other: Type<'db>,
-        inferable: &InferableTypeVars<'db>,
+        inferable: InferableTypeVars<'_, 'db>,
         visitor: &IsDisjointVisitor<'db>,
     ) -> ConstraintSet<'db> {
         match &self.kind {
@@ -539,7 +539,7 @@ impl<'a, 'db> ProtocolMember<'a, 'db> {
         &self,
         db: &'db dyn Db,
         other: Type<'db>,
-        inferable: &InferableTypeVars<'db>,
+        inferable: InferableTypeVars<'_, 'db>,
         relation: TypeRelation,
         visitor: &HasRelationToVisitor<'db>,
     ) -> ConstraintSet<'db> {

@@ -167,7 +167,7 @@ impl<'db> CallableSignature<'db> {
         &self,
         db: &'db dyn Db,
         other: &Self,
-        inferable: &InferableTypeVars<'db>,
+        inferable: InferableTypeVars<'_, 'db>,
     ) -> ConstraintSet<'db> {
         self.has_relation_to_impl(
             db,
@@ -182,7 +182,7 @@ impl<'db> CallableSignature<'db> {
         &self,
         db: &'db dyn Db,
         other: &Self,
-        inferable: &InferableTypeVars<'db>,
+        inferable: InferableTypeVars<'_, 'db>,
         relation: TypeRelation,
         visitor: &HasRelationToVisitor<'db>,
     ) -> ConstraintSet<'db> {
@@ -202,7 +202,7 @@ impl<'db> CallableSignature<'db> {
         db: &'db dyn Db,
         self_signatures: &[Signature<'db>],
         other_signatures: &[Signature<'db>],
-        inferable: &InferableTypeVars<'db>,
+        inferable: InferableTypeVars<'_, 'db>,
         relation: TypeRelation,
         visitor: &HasRelationToVisitor<'db>,
     ) -> ConstraintSet<'db> {
@@ -263,7 +263,7 @@ impl<'db> CallableSignature<'db> {
         &self,
         db: &'db dyn Db,
         other: &Self,
-        inferable: &InferableTypeVars<'db>,
+        inferable: InferableTypeVars<'_, 'db>,
         visitor: &IsEquivalentVisitor<'db>,
     ) -> ConstraintSet<'db> {
         match (self.overloads.as_slice(), other.overloads.as_slice()) {
@@ -574,9 +574,18 @@ impl<'db> Signature<'db> {
         &self,
         db: &'db dyn Db,
         other: &Signature<'db>,
-        inferable: &InferableTypeVars<'db>,
+        inferable: InferableTypeVars<'_, 'db>,
         visitor: &IsEquivalentVisitor<'db>,
     ) -> ConstraintSet<'db> {
+        // The typevars in self and other should also be considered inferable when checking whether
+        // two signatures are equivalent.
+        let self_inferable =
+            (self.generic_context).map(|generic_context| generic_context.inferable_typevars(db));
+        let other_inferable =
+            (other.generic_context).map(|generic_context| generic_context.inferable_typevars(db));
+        let inferable = inferable.merge(self_inferable.as_ref());
+        let inferable = inferable.merge(other_inferable.as_ref());
+
         let mut result = ConstraintSet::from(true);
         let mut check_types = |self_type: Option<Type<'db>>, other_type: Option<Type<'db>>| {
             let self_type = self_type.unwrap_or(Type::unknown());
@@ -661,10 +670,19 @@ impl<'db> Signature<'db> {
         &self,
         db: &'db dyn Db,
         other: &Signature<'db>,
-        inferable: &InferableTypeVars<'db>,
+        inferable: InferableTypeVars<'_, 'db>,
         relation: TypeRelation,
         visitor: &HasRelationToVisitor<'db>,
     ) -> ConstraintSet<'db> {
+        // The typevars in self and other should also be considered inferable when checking whether
+        // two signatures are equivalent.
+        let self_inferable =
+            (self.generic_context).map(|generic_context| generic_context.inferable_typevars(db));
+        let other_inferable =
+            (other.generic_context).map(|generic_context| generic_context.inferable_typevars(db));
+        let inferable = inferable.merge(self_inferable.as_ref());
+        let inferable = inferable.merge(other_inferable.as_ref());
+
         /// A helper struct to zip two slices of parameters together that provides control over the
         /// two iterators individually. It also keeps track of the current parameter in each
         /// iterator.
