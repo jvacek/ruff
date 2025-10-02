@@ -2445,6 +2445,7 @@ struct ArgumentTypeChecker<'a, 'db> {
     call_expression_tcx: &'a TypeContext<'db>,
     errors: &'a mut Vec<BindingError<'db>>,
 
+    inferable_typevars: InferableTypeVars<'db, 'db>,
     specialization: Option<Specialization<'db>>,
 }
 
@@ -2466,6 +2467,7 @@ impl<'a, 'db> ArgumentTypeChecker<'a, 'db> {
             parameter_tys,
             call_expression_tcx,
             errors,
+            inferable_typevars: InferableTypeVars::None,
             specialization: None,
         }
     }
@@ -2502,8 +2504,8 @@ impl<'a, 'db> ArgumentTypeChecker<'a, 'db> {
             return;
         };
 
-        let mut builder =
-            SpecializationBuilder::new(self.db, generic_context.inferable_typevars(self.db));
+        self.inferable_typevars = generic_context.inferable_typevars(self.db);
+        let mut builder = SpecializationBuilder::new(self.db, self.inferable_typevars);
 
         // Note that we infer the annotated type _before_ the arguments if this call is part of
         // an annotated assignment, to closer match the order of any unions written in the type
@@ -2557,12 +2559,6 @@ impl<'a, 'db> ArgumentTypeChecker<'a, 'db> {
                 argument_type = argument_type.apply_specialization(self.db, specialization);
                 expected_ty = expected_ty.apply_specialization(self.db, specialization);
             }
-            let inferable_typevars = match self.specialization {
-                Some(specialization) => specialization
-                    .generic_context(self.db)
-                    .inferable_typevars(self.db),
-                None => InferableTypeVars::None,
-            };
             // This is one of the few places where we want to check if there's _any_ specialization
             // where assignability holds; normally we want to check that assignability holds for
             // _all_ specializations.
@@ -2570,7 +2566,7 @@ impl<'a, 'db> ArgumentTypeChecker<'a, 'db> {
             // constraint set that we get from this assignability check, instead of inferring and
             // building them in an earlier separate step.
             if argument_type
-                .when_assignable_to(self.db, expected_ty, inferable_typevars)
+                .when_assignable_to(self.db, expected_ty, self.inferable_typevars)
                 .is_never_satisfied()
             {
                 let positional = matches!(argument, Argument::Positional | Argument::Synthetic)
