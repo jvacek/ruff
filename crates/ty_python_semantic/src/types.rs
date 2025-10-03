@@ -1446,7 +1446,7 @@ impl<'db> Type<'db> {
     ///
     /// See [`TypeRelation::Redundancy`] for more details.
     pub(crate) fn is_redundant_with(self, db: &'db dyn Db, other: Type<'db>) -> bool {
-        self.has_relation_to(db, other, TypeRelation::Redundancy)
+        self.has_relation_to(db, other, InferableTypeVars::None, TypeRelation::Redundancy)
             .is_always_satisfied()
     }
 
